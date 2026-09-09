@@ -1485,3 +1485,39 @@ than discovered during a demo.
 
 ---
 
+## Service boundaries
+
+Every service encapsulates exactly one domain and owns the data for that domain alone. The *does not
+own* column is the important one — it is what stops this design collapsing into a distributed
+monolith.
+
+| Service | Owns | Does **not** own |
+| --- | --- | --- |
+| **Player** | Identity, credentials, JWT issuance, profiles, friends, presence, XP, levels, persistent inventory | Resource pools, map geometry, base state, exam results |
+| **Game** | Lobbies, day/night cycle, session and action timers, trade coordination, WebSocket sessions | The map, player inventory, resource stock, zombie definitions — it *orchestrates and notifies*, it does not persist them |
+| **Exam** | Courses, exam instances, attempts, questions, answers, grades, achievements, diploma progress | Player XP ledger, map unlocks — it only publishes `ExamPassed` |
+| **World** | Campus geography: rooms, corridors, zones, resource-node placement, spawn configuration, wings | What players built inside rooms, resource quantities, zombie runtime state |
+| **Zombie** | Zombie type registry, stats, behaviour configuration, live instances and their stolen inventories | Player inventory, resource pools, the map itself |
+| **Resource** | The resource economy: pools, stock levels, and every idempotent gather/consume/transfer transaction | Room locations, what is built with the resources, player inventory of crafted goods |
+| **Base** | Player-built state: base level, facilities, barricades, storage tiers, decorations, Kiki | Campus geography, resource stock, player inventory |
+| **Crafting** | Recipe catalogue, unlock rules, craft job records | Resources consumed, the item once delivered, the exam and level state it queries |
+
+### The four boundaries most likely to be challenged
+
+> **World vs Base.** World Service owns the campus *geography*. Base Service owns what players have
+> *built or changed* within that geography. A room exists because World says so; a barricade **in**
+> that room exists because Base says so. World never mutates on a player's behalf.
+
+> **Game vs Resource.** Game Service owns *"the player is scavenging for five minutes."* Resource
+> Service owns *"the player received twelve food when the action completed."* Game holds the timer;
+> Resource holds the truth about stock.
+
+> **Player inventory vs Resource pools.** Raw materials in the world live in Resource Service pools.
+> Finished goods a player carries live in Player Service inventory. Crafting is the bridge: it
+> consumes from the first and delivers to the second.
+
+> **Zombie vs Game.** Zombie Service owns what a zombie *is* and its persistent instance state,
+> including anything it has stolen. Game Service owns what a zombie *does during this cycle*. A
+> zombie's loot survives the cycle; its current aggression target does not.
+
+---
