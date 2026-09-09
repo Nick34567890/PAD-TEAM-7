@@ -1415,3 +1415,73 @@ Errors: `422 ALREADY_COMPENSATED` · `422 CANNOT_COMPENSATE_FAILED_TRANSACTION`
 
 ---
 
+## Event catalogue
+
+Asynchronous events are facts that already happened. A publisher never waits for a consumer, and a
+consumer that is down must be able to catch up — so every event carries an `event_id` and consumers
+deduplicate on it exactly as endpoints deduplicate on `Idempotency-Key`.
+
+Envelope:
+
+```json
+{
+  "event_id": "evt-uuid-0091",
+  "type": "ExamPassed",
+  "version": 1,
+  "occurred_at": "2026-09-09T11:24:10Z",
+  "producer": "exam-service",
+  "payload": { }
+}
+```
+
+| Event | Producer | Consumers | Payload | Effect |
+| --- | --- | --- | --- | --- |
+| `PlayerRegistered` | Player | Exam | `{ player_id, username }` | Enrol the player in the starting courses |
+| `PlayerLeveledUp` | Player | Crafting | `{ player_id, level }` | Re-evaluate level-gated recipes |
+| `LobbyCreated` | Game | World, Base | `{ lobby_id, university, seed }` | Generate world and base |
+| `LobbyFinished` | Game | World, Base, Zombie, Resource | `{ lobby_id }` | Release per-lobby state |
+| `CycleChanged` | Game | Zombie, World | `{ lobby_id, phase, day }` | Spawn or despawn; regenerate nodes |
+| `ActionCompleted` | Game | Resource | `{ action_id, player_id, pool_id, items }` | Apply the gathered resources |
+| `ExamPassed` | Exam | World, Player, Crafting | `{ player_id, course_id, grade }` | Unlock a wing; award XP; re-evaluate recipes |
+| `AchievementUnlocked` | Exam | Player | `{ player_id, code, reward }` | Grant the reward and title |
+| `WingUnlocked` | World | Crafting, Game | `{ lobby_id, wing_code, rooms_added }` | Re-evaluate wing-gated recipes |
+| `ZombieKilled` | Zombie | Player, Game | `{ zombie_id, killer_player_id, loot, xp }` | Award loot and XP |
+| `ResourcesStolen` | Zombie | Game | `{ zombie_id, victim_id, items }` | Notify the client over WebSocket |
+| `ItemCrafted` | Crafting | Player, Game | `{ job_id, player_id, output_item_id, count }` | Notify the client |
+| `CraftCompensated` | Crafting | Game | `{ job_id, player_id, restored_items }` | Notify the client the craft was rolled back |
+| `BaseUpgraded` | Base | Game, World | `{ base_id, lobby_id, level, defense_rating }` | Update defence in the live loop |
+| `BarricadeDestroyed` | Base | Game, Zombie | `{ base_id, room_id, destroyed_by }` | Room becomes reachable again |
+
+**Transport for Lab 0–1** is direct HTTP `POST` to a consumer webhook, with retry and exponential
+backoff. **From Lab 2** these move onto a message broker; the envelope above is designed so that
+migration changes the transport and not a single payload.
+
+---
+
+## Failure and consistency model
+
+What happens when part of the system is unavailable — written down now so it is designed for rather
+than discovered during a demo.
+
+| Failure | Effect | Handling |
+| --- | --- | --- |
+| **Player Service down** | Nothing authenticates; the system is effectively offline | Accepted single point of failure for Lab 0. Gateway caches the JWKS so already-issued tokens keep validating; from Lab 3 Player Service runs replicated |
+| **Resource Service down** | No gathering, crafting, building | Callers return `503 DEPENDENCY_UNAVAILABLE`. Game Service keeps the timer running and retries the credit with the same key — the player is not robbed of a completed action |
+| **World Service down** | No new lobbies; barricades cannot be validated | Existing lobbies keep running from Game Service cached room data. Base returns `503` for new barricades |
+| **Exam Service down** | Professor Zombie encounters cannot start | Game Service degrades the encounter to a normal attack rather than blocking the cycle |
+| **Zombie Service down** | No spawns this cycle | Game Service skips the spawn step; the night is quiet. Live instances are unaffected because Zombie holds their state |
+| **Base or Crafting down** | Those features return `503` | No other service depends on them for a core loop — this is the cheapest failure in the system, by design |
+| **A saga fails midway** | Materials consumed but item undelivered | Compensation returns them under `<key>:compensate`; the job records `compensated` and the client is notified |
+| **A client reconnects and replays** | Duplicate completion event | The idempotency key makes the replay a no-op that returns the original result |
+
+**Consistency guarantees we actually make:**
+
+- **Within one service** — strongly consistent, enforced by PostgreSQL transactions.
+- **Across services** — eventually consistent. A player who crafts an item may briefly see the
+  materials gone before the item appears in their inventory. That window is bounded by the saga and
+  never lost, only delayed.
+- **Never** — no service exposes a read that depends on another service having already applied a
+  write. Every screen is composed from independent reads that may be a moment out of step.
+
+---
+
