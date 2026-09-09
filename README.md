@@ -2752,3 +2752,238 @@ Headers: `Authorization: Bearer <jwt>`
 ```
 
 ---
+
+
+## GitHub workflow
+
+### Branches
+
+| Branch | Purpose | Protected |
+| --- | --- | --- |
+| `main` | Production-ready, always deployable. Only release PRs from `development` land here. | Yes |
+| `development` | Integration branch and the repository default. All feature work targets this. | Yes |
+
+### Protection rules
+
+Applied identically to `main` and `development`:
+
+- Require a pull request before merging
+- **Require 2 approving reviews** — with four members and eight interdependent services, one approval
+  is not enough to catch a contract break in a service the author does not own
+- Dismiss stale approvals when new commits are pushed
+- Require branches to be up to date before merging
+- Require conversation resolution before merging
+- Do not allow bypassing these settings, including for administrators
+- Block force pushes and deletions
+
+### Branch naming
+
+```
+<type>/<service>/<issue-number>-<short-kebab-summary>
+```
+
+Examples:
+
+```
+feat/crafting-service/42-atomic-craft-saga
+fix/zombie-service/57-loot-lost-on-despawn
+refactor/resource-service/61-idempotency-index
+docs/contracts/70-add-world-unlock-endpoint
+```
+
+| Type | Use for |
+| --- | --- |
+| `feat/` | New functionality |
+| `fix/` | Bug fixes |
+| `hotfix/` | Urgent fixes branched from `main` |
+| `refactor/` | Restructuring with no behaviour change |
+| `perf/` | Performance work |
+| `test/` | Adding or repairing tests |
+| `docs/` | Documentation, including this contract |
+| `chore/` | Dependencies, CI, tooling |
+
+The `<service>` segment is one of the eight service names, or `contracts` for changes to this
+document, or `shared` for anything genuinely cross-cutting. **The issue number is mandatory** — it is
+how the GitHub Project board tracks work automatically, and it means a branch name alone tells you
+what the change was for.
+
+### Commits
+
+[Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`, imperative
+mood, no trailing period.
+
+```
+feat(crafting): add compensation path when delivery fails
+fix(zombie): return stolen loot to the pool on despawn
+docs(contracts): document the resource consume endpoint
+```
+
+### Merging
+
+**Squash and merge into `development`.** One feature becomes one commit, keeping history linear and
+reverts trivial.
+
+**Merge commit for release PRs into `main`,** so a release is a single identifiable point in history
+that can be tagged and rolled back as a unit.
+
+Feature branches are deleted automatically on merge.
+
+### Pull requests
+
+Every PR uses [`.github/PULL_REQUEST_TEMPLATE.md`](./.github/PULL_REQUEST_TEMPLATE.md) and must
+carry: what changed and why, the linked issue, how to test, and the **contract-impact** section.
+
+**Contract-change protocol.** If a PR changes any endpoint, payload, response or event shape in this
+document:
+
+1. The change to this README ships **in the same PR** as the code.
+2. Every owner whose service appears under that service's *Consumed by* line is added as a reviewer.
+3. The PR is labelled `contract-change`.
+4. Breaking changes ship as `/api/v2/` alongside `v1`; `v1` is removed only once every consumer has
+   migrated.
+
+This exists because a silent contract drift in Resource Service breaks four services owned by three
+people, and TypeScript will not catch it at compile time.
+
+### Testing
+
+| Scope | Requirement |
+| --- | --- |
+| Unit coverage | **≥ 80 %** of domain logic per service, measured in CI |
+| Idempotency | **Every** endpoint accepting `Idempotency-Key` has a test that replays the key and asserts no second effect |
+| Sagas | Crafting, trading and base upgrades have integration tests covering success, insufficient-resources, and compensation-after-delivery-failure |
+| Contract | Each consumer keeps fixture tests pinned to the exact payloads in this document |
+| Pre-PR | The full suite passes locally; CI enforces it from Lab 2 |
+
+The idempotency and saga rows are not negotiable — they are the correctness properties this
+architecture rests on, and an untested compensation path is an unwritten one.
+
+### Versioning and releases
+
+Semantic Versioning per service, `MAJOR.MINOR.PATCH`.
+
+| Bump | When |
+| --- | --- |
+| `MAJOR` | Breaking contract change other services depend on |
+| `MINOR` | Backward-compatible feature — new zombie type, new recipe, new wing |
+| `PATCH` | Bug fix or internal improvement |
+
+Releases are tagged `v1.2.0` on `main` and published as GitHub Releases with a changelog in
+Keep a Changelog format (`Added` / `Changed` / `Fixed` / `Removed` / `Security`). The CPR carries its
+own tag for each lab presentation: `lab-0`, `lab-1`, and so on, so any lab can be reproduced exactly
+as presented.
+
+### Code review
+
+Reviewers check, in order: does it match the contract in this document; are the idempotency and
+error paths tested; does it stay inside the service boundary; and are there secrets or build
+artefacts in the diff. Authors keep PRs focused, push fixes as separate commits so the diff stays
+reviewable, and re-request review after addressing feedback.
+
+### Definition of done
+
+A task is done when: the code is merged to `development`; tests pass and coverage holds; this README
+is updated if the contract moved; the service README is updated if its endpoints moved; the linked
+issue is closed by the PR; and the Project board card has moved to **Done** automatically.
+
+### Non-negotiables
+
+- No `.env`, credential, API key, `node_modules/`, `vendor/` or build artefact is ever committed.
+  `.gitignore` is the first line of defence and review is the second.
+- No direct pushes to `main` or `development`.
+- No service reads another service's database.
+- No endpoint ships without appearing in this document.
+
+---
+
+## Repository layout
+
+```
+.
+├── README.md                          ← this document: design + contract + workflow
+├── .gitignore
+├── .gitmodules                        ← the eight private service repositories
+├── .github/
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── CODEOWNERS
+├── docs/                              ← architecture diagrams (to be added)
+├── guide-private.md                   ← how to create and link the private repos
+├── player-service/                    ← submodule (private)
+├── game-service/                      ← submodule (private)
+├── exam-service/                      ← submodule (private)
+├── world-service/                     ← submodule (private)
+├── zombie-service/                    ← submodule (private)
+├── resource-service/                  ← submodule (private)
+├── base-service/                      ← submodule (private)
+└── crafting-service/                  ← submodule (private)
+```
+
+### Submodules
+
+The eight service repositories are **private by design**. Only the professor is invited to them —
+team members integrate against the contract in this document rather than by reading each other's
+source, which is what keeps the boundaries honest.
+
+```bash
+git clone --recurse-submodules https://github.com/<GITHUB_ORG>/<CPR_REPO>.git
+```
+
+Cloning a submodule without access fails with a permission error. **That is expected behaviour, not
+a misconfiguration.** Step-by-step instructions for creating, populating and linking these
+repositories are in **[guide-private.md](./guide-private.md)**.
+
+---
+
+## Glossary
+
+Shared vocabulary. **Item identifiers are contract, not implementation detail** — a service inventing
+its own spelling for `metal-01` is a breaking change.
+
+### Resource items
+
+| `item_id` | Name | Source |
+| --- | --- | --- |
+| `wood-01` | Wood | Chopping benches |
+| `metal-01` | Metal Scraps | Laboratories |
+| `paper-01` | Paper | Library, classrooms |
+| `food-01` | Food | Canteen |
+| `coffee-01` | Coffee | Canteen |
+| `electronics-01` | Electronics | Laboratories, engineering wing |
+| `textbook-01` | Textbook | Classrooms |
+| `chemicals-01` | Chemicals | Laboratories, engineering wing |
+
+### Crafted and consumable items
+
+| `item_id` | Name | Category |
+| --- | --- | --- |
+| `barricade-kit-01` | Barricade Kit | equipment |
+| `axe-01` | Improvised Axe | equipment |
+| `detector-01` | Zombie Detector | equipment |
+| `plate-01` | Reinforced Plate | equipment |
+| `cheatsheet-01` | Exam Cheat Sheet | consumable |
+| `energy-01` | Energy Drink | consumable |
+| `sandwich-01` | Davidan Sandwich | consumable |
+| `poster-faf-01` | FAF Poster | cosmetic |
+
+### Terms
+
+| Term | Meaning |
+| --- | --- |
+| **CPR** | Common Public Repository — this repository |
+| **Lobby** | One game session, owned by Game Service |
+| **Cycle** | One day or night phase within a lobby |
+| **Pool** | A container of resource stock owned by Resource Service, scoped to a node, player or lobby |
+| **Node** | A resource-yielding point in a room, owned by World Service |
+| **Wing** | A section of the university, unlocked by passing exams |
+| **Saga** | A multi-service operation with an explicit compensation path |
+| **Idempotency key** | A caller-supplied UUID making a mutating request safe to retry |
+| **Kiki** | The FAF Cab resident who exchanges offerings for random rewards |
+
+---
+
+<div align="center">
+
+**FAF.PAD21.1 — Autumn 2026 — Laboratory 0**
+Technical University of Moldova · Faculty of Computers, Informatics and Microelectronics
+
+</div>
