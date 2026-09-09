@@ -1521,3 +1521,97 @@ monolith.
 > zombie's loot survives the cycle; its current aggression target does not.
 
 ---
+
+## API conventions
+
+These apply to every service. They exist so that eight services written by four people in two
+languages behave the same way at the network boundary.
+
+### Versioning
+
+All routes are prefixed **`/api/v1/`**. A breaking change to any payload or response ships as
+`/api/v2/` alongside `v1`, and `v1` is removed only after every consumer has migrated. WebSocket
+routes are versioned the same way: `/ws/v1/`.
+
+### Error envelope
+
+Every non-2xx response uses one shape, so clients and services parse errors identically:
+
+```json
+{
+  "error": {
+    "code": "INSUFFICIENT_RESOURCES",
+    "message": "Not enough metal scraps to complete this upgrade.",
+    "details": { "missing": [{ "item_id": "metal-01", "required": 12, "available": 5 }] }
+  },
+  "request_id": "req-uuid-8f21"
+}
+```
+
+| Status | When | Example `code` |
+| --- | --- | --- |
+| `400` | Malformed or failing validation | `VALIDATION_FAILED` |
+| `401` | Missing, expired or invalid token | `UNAUTHENTICATED` |
+| `403` | Authenticated but not permitted, or a locked game state | `RECIPE_LOCKED` |
+| `404` | Resource does not exist | `PLAYER_NOT_FOUND` |
+| `409` | Conflicts with current state | `INSUFFICIENT_RESOURCES`, `ACTION_ALREADY_ACTIVE` |
+| `422` | Well-formed but not satisfiable by game rules | `MAX_LEVEL_REACHED` |
+| `429` | Rate or cycle limit hit | `KIKI_ALREADY_FED` |
+| `500` | Unexpected failure | `INTERNAL_ERROR` |
+| `503` | A required downstream service is unreachable | `DEPENDENCY_UNAVAILABLE` |
+
+### Common headers
+
+| Header | Direction | Purpose |
+| --- | --- | --- |
+| `Authorization: Bearer <jwt>` | in | Player or service token |
+| `Idempotency-Key: <uuid>` | in | Required on every mutating cross-service call |
+| `X-Request-Id: <uuid>` | both | Propagated unchanged across every hop for tracing |
+
+### Identifiers, time and pagination
+
+- IDs are **UUID v4** strings. Item and type identifiers are stable human-readable slugs
+  (`metal-01`, `professor_zombie`) agreed across all services in the [glossary](#glossary).
+- Timestamps are **RFC 3339 / ISO 8601 in UTC**: `2026-09-09T12:30:00Z`.
+- List endpoints accept `limit` (default 50, max 200) and `cursor`, and return
+  `{ "items": [...], "next_cursor": "..." }`. Collections shown below omit the envelope for brevity
+  where a full page is always returned.
+
+---
+
+## Authentication and authorization
+
+**Player Service is the only issuer of tokens.** Everything else validates them.
+
+### Player token
+
+Issued on login, valid 60 minutes, paired with a 30-day refresh token.
+
+```json
+{
+  "sub": "player-uuid-123",
+  "username": "undead_survivor",
+  "roles": ["player"],
+  "iss": "player-service",
+  "exp": 1789000000
+}
+```
+
+Roles: `player`, `moderator`. Signed **RS256**; every service validates against Player Service's
+public key, fetched at boot from `GET /api/v1/auth/jwks` and cached. No shared private key ever
+leaves Player Service.
+
+### Service token
+
+Cross-service calls carry a separate token signed **HS256** with an internal secret distributed
+through environment variables and never committed.
+
+```json
+{ "sub": "crafting-service", "roles": ["service"], "aud": "resource-service", "exp": 1789000000 }
+```
+
+Endpoints marked **`service`** below reject player tokens outright and are not routable from the
+public gateway. Endpoints marked **`player`** accept a player token; a player may only act on their
+own `sub` unless they hold `moderator`.
+
+---
