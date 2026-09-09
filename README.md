@@ -1615,3 +1615,498 @@ public gateway. Endpoints marked **`player`** accept a player token; a player ma
 own `sub` unless they hold `moderator`.
 
 ---
+
+### 3. Exam Service
+
+**Owner:** Ilico Artemie · **TypeScript** · **Port `8003`** · [`exam-service`](./exam-service)
+
+Responsible for the **actual academic progression** of players. Maintains active exams for the
+semester, exam attempts, questions, answers, grades and pass/fail results. When a player encounters a
+Professor Zombie, Game Service requests an exam from this service. Questions are generated from a
+static seeded bank — deliberately, since the interesting problem here is the distributed workflow,
+not question generation.
+
+Tracks course completion, grades, achievements and diploma milestones. Passing specific exams
+triggers events: completing all Math exams awards the **"Survived the Pumpkin"** achievement and
+notifies World Service to unlock a new wing.
+
+**Calls out to:** Player (award XP and achievement rewards).
+**Consumed by:** Game (request an exam) · World (`ExamPassed` → unlock a wing) · Crafting (recipe
+gating) · Base (facility gating).
+
+#### Data model
+
+| Table | Key columns |
+| --- | --- |
+| `courses` | `course_id`, `name`, `department`, `credits`, `required_for_diploma` |
+| `questions` | `question_id`, `course_id`, `text`, `options`, `correct_option`, `difficulty` |
+| `exams` | `exam_id`, `player_id`, `course_id`, `lobby_id`, `status`, `score`, `started_at`, `expires_at` |
+| `exam_questions` | `exam_id`, `question_id`, `position`, `answered_option` |
+| `player_courses` | `player_id`, `course_id`, `status`, `best_grade`, `attempts` |
+| `achievements` | `achievement_id`, `player_id`, `code`, `awarded_at` |
+
+#### Grading rules
+
+Ten questions per exam, one point each, **six correct to pass**. An exam expires 300 seconds after
+issue; an expired exam is graded on whatever was answered. Three failed attempts on a course locks
+it until the next in-game day.
+
+#### Endpoints
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/courses` | player | Course catalogue |
+| `POST` | `/api/v1/exams` | service | Issue an exam for an encounter |
+| `GET` | `/api/v1/exams/{exam_id}` | player | Exam with its questions |
+| `POST` | `/api/v1/exams/{exam_id}/answers` | player | Save an answer |
+| `POST` | `/api/v1/exams/{exam_id}/submit` | player | Submit and grade |
+| `GET` | `/api/v1/players/{player_id}/exams` | player | Active and past exams |
+| `GET` | `/api/v1/players/{player_id}/courses` | player | Course progress |
+| `GET` | `/api/v1/players/{player_id}/achievements` | player | Achievements earned |
+| `GET` | `/api/v1/players/{player_id}/diploma` | player | Diploma progress |
+| `GET` | `/api/v1/players/{player_id}/passed` | service | Passed course ids, for gating |
+
+---
+
+**`GET /api/v1/courses`** — catalogue. Query: `department`.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    { "course_id": "math-101", "name": "Mathematical Analysis", "department": "Math", "credits": 6, "required_for_diploma": true },
+    { "course_id": "math-102", "name": "Linear Algebra", "department": "Math", "credits": 5, "required_for_diploma": true },
+    { "course_id": "pad-201", "name": "Distributed Systems", "department": "SE", "credits": 6, "required_for_diploma": true }
+  ]
+}
+```
+
+---
+
+**`POST /api/v1/exams`** — issue an exam. Called by Game Service on a Professor Zombie encounter.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{
+  "player_id": "player-uuid-123",
+  "lobby_id": "lobby-uuid-789",
+  "course_id": "math-101",
+  "encounter_id": "encounter-uuid-001"
+}
+```
+
+`201 Created`
+
+```json
+{
+  "exam_id": "exam-uuid-555",
+  "player_id": "player-uuid-123",
+  "course_id": "math-101",
+  "status": "in_progress",
+  "question_count": 10,
+  "passing_score": 6,
+  "started_at": "2026-09-09T11:20:00Z",
+  "expires_at": "2026-09-09T11:25:00Z"
+}
+```
+
+Omitting `course_id` makes the service pick a course the player has not yet passed. Errors:
+`409 EXAM_ALREADY_ACTIVE` · `422 COURSE_LOCKED` (three failed attempts today) ·
+`422 ALL_COURSES_PASSED`
+
+---
+
+**`GET /api/v1/exams/{exam_id}`** — the exam with its questions. Correct answers are never included
+in the response.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "exam_id": "exam-uuid-555",
+  "course_id": "math-101",
+  "course_name": "Mathematical Analysis",
+  "status": "in_progress",
+  "expires_at": "2026-09-09T11:25:00Z",
+  "seconds_remaining": 240,
+  "questions": [
+    {
+      "question_id": "q-math-017",
+      "position": 1,
+      "text": "What is the derivative of sin(x)?",
+      "options": ["cos(x)", "-cos(x)", "sin(x)", "-sin(x)"],
+      "answered_option": null
+    }
+  ]
+}
+```
+
+Errors: `403 NOT_YOUR_EXAM` · `404 EXAM_NOT_FOUND`
+
+---
+
+**`POST /api/v1/exams/{exam_id}/answers`** — save one answer. Idempotent by nature: re-answering the
+same question overwrites the previous choice.
+Headers: `Authorization: Bearer <jwt>`
+
+```json
+{ "question_id": "q-math-017", "option_index": 0 }
+```
+
+`200 OK` — `{ "question_id": "q-math-017", "answered_option": 0, "answered_count": 1, "total": 10 }`
+
+Errors: `422 EXAM_EXPIRED` · `422 EXAM_ALREADY_SUBMITTED`
+
+---
+
+**`POST /api/v1/exams/{exam_id}/submit`** — grade the exam. On a pass, publishes `ExamPassed` and
+awards XP through Player Service.
+Headers: `Authorization: Bearer <jwt>` · `Idempotency-Key: <uuid>`
+
+`200 OK`
+
+```json
+{
+  "exam_id": "exam-uuid-555",
+  "course_id": "math-101",
+  "score": 8,
+  "passing_score": 6,
+  "passed": true,
+  "grade": 9,
+  "xp_awarded": 250,
+  "achievements_unlocked": [
+    { "code": "survived_the_pumpkin", "name": "Survived the Pumpkin", "description": "Passed every Math exam." }
+  ],
+  "world_unlock_requested": { "wing": "engineering" },
+  "submitted_at": "2026-09-09T11:24:10Z"
+}
+```
+
+Errors: `422 EXAM_ALREADY_SUBMITTED` · `409 IDEMPOTENCY_KEY_REUSED`
+
+---
+
+**`GET /api/v1/players/{player_id}/exams`** — active and historical exams. Query: `status`, `limit`.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    { "exam_id": "exam-uuid-555", "course_id": "math-101", "status": "passed", "score": 8, "grade": 9, "submitted_at": "2026-09-09T11:24:10Z" },
+    { "exam_id": "exam-uuid-554", "course_id": "pad-201", "status": "in_progress", "expires_at": "2026-09-09T11:40:00Z" }
+  ]
+}
+```
+
+---
+
+**`GET /api/v1/players/{player_id}/courses`** — per-course progress.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    { "course_id": "math-101", "name": "Mathematical Analysis", "status": "passed", "best_grade": 9, "attempts": 1 },
+    { "course_id": "math-102", "name": "Linear Algebra", "status": "failed", "best_grade": 4, "attempts": 3, "locked_until_day": 6 },
+    { "course_id": "pad-201", "name": "Distributed Systems", "status": "not_attempted", "attempts": 0 }
+  ]
+}
+```
+
+---
+
+**`GET /api/v1/players/{player_id}/achievements`**
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    {
+      "code": "survived_the_pumpkin",
+      "name": "Survived the Pumpkin",
+      "description": "Passed every Math exam.",
+      "awarded_at": "2026-09-09T11:24:10Z",
+      "reward": { "item_id": "energy-01", "count": 3, "title": "Survivor of the Pumpkin" }
+    }
+  ]
+}
+```
+
+---
+
+**`GET /api/v1/players/{player_id}/diploma`** — progress toward graduating, which is the win
+condition of a session.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "player_id": "player-uuid-123",
+  "credits_earned": 17,
+  "credits_required": 60,
+  "courses_passed": 3,
+  "courses_required": 10,
+  "gpa": 8.3,
+  "graduated": false
+}
+```
+
+---
+
+**`GET /api/v1/players/{player_id}/passed`** — passed course ids only. The gating query used by
+Crafting and Base; deliberately minimal so it stays cheap under repeated calls.
+Headers: `Authorization: Bearer <service_jwt>`
+
+`200 OK` — `{ "player_id": "player-uuid-123", "passed_course_ids": ["math-101", "math-102"] }`
+
+---
+
+### 4. World Service
+
+**Owner:** Ilico Artemie · **TypeScript** · **Port `8004`** · [`world-service`](./world-service)
+
+Creates and owns the **persistent physical state of the university**: the campus map, including
+rooms, corridors, zones, resource nodes, barricade positions and zombie spawn configuration.
+
+Different room types provide different resources:
+
+| Room type | Yields |
+| --- | --- |
+| Laboratory | `metal-01` metal scraps, `electronics-01` electronics |
+| Library | `paper-01` paper |
+| Canteen | `food-01` food, `coffee-01` coffee |
+| Classroom | `textbook-01` textbooks, `paper-01` paper |
+| Corridor | nothing — connective only |
+| FAF Cab | the starting homeroom, held as a base by Base Service |
+
+**The map expands when players pass exams.** Exam Service publishes `ExamPassed`; World Service
+procedurally generates and unlocks an appropriate new section of the university.
+
+**Calls out to:** Resource (create pools for newly unlocked rooms).
+**Consumed by:** Game (rooms, nodes, spawn points) · Base (room existence validation) · Zombie (spawn
+configuration) · Crafting (wing-gated recipes).
+
+#### Data model
+
+| Table | Key columns |
+| --- | --- |
+| `worlds` | `world_id`, `lobby_id` (unique), `seed`, `generated_at` |
+| `wings` | `wing_id`, `world_id`, `code`, `name`, `unlocked`, `unlocked_at`, `unlock_course_id` |
+| `rooms` | `room_id`, `world_id`, `wing_id`, `code`, `type`, `x`, `y`, `safe` |
+| `corridors` | `corridor_id`, `world_id`, `room_a`, `room_b` |
+| `resource_nodes` | `node_id`, `room_id`, `item_id`, `richness`, `depleted_until_day` |
+| `spawn_points` | `spawn_id`, `room_id`, `zombie_type_id`, `weight`, `night_only` |
+
+#### Endpoints
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `POST` | `/api/v1/worlds` | service | Generate a world for a lobby |
+| `GET` | `/api/v1/worlds/{lobby_id}` | player | Full map |
+| `GET` | `/api/v1/worlds/{lobby_id}/wings` | player | Wings and unlock state |
+| `GET` | `/api/v1/worlds/{lobby_id}/rooms` | player | Rooms, filterable |
+| `GET` | `/api/v1/rooms/{room_id}` | player / service | One room with its nodes |
+| `GET` | `/api/v1/worlds/{lobby_id}/nodes` | service | Resource nodes |
+| `GET` | `/api/v1/worlds/{lobby_id}/spawns` | service | Spawn points for a phase |
+| `POST` | `/api/v1/worlds/{lobby_id}/unlock` | service | Unlock a wing on `ExamPassed` |
+| `PATCH` | `/api/v1/rooms/{room_id}` | service | Mark a room safe or contested |
+
+---
+
+**`POST /api/v1/worlds`** — generate the world for a new lobby. Creates rooms, nodes and spawn points
+from a seed, then asks Resource Service to create a pool per node-bearing room.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "lobby_id": "lobby-uuid-789", "university": "FAF", "seed": "cab-survivors-2026" }
+```
+
+`201 Created`
+
+```json
+{
+  "world_id": "world-uuid-001",
+  "lobby_id": "lobby-uuid-789",
+  "seed": "cab-survivors-2026",
+  "home_room_id": "faf-cab",
+  "wings": [
+    { "wing_id": "wing-uuid-01", "code": "block_1", "name": "Block 1", "unlocked": true },
+    { "wing_id": "wing-uuid-02", "code": "engineering", "name": "Engineering Wing", "unlocked": false, "unlock_course_id": "math-101" }
+  ],
+  "room_count": 24,
+  "node_count": 31
+}
+```
+
+Errors: `409 WORLD_ALREADY_EXISTS`
+
+---
+
+**`GET /api/v1/worlds/{lobby_id}`** — the full map. Locked wings are returned as stubs, without their
+rooms.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "world_id": "world-uuid-001",
+  "lobby_id": "lobby-uuid-789",
+  "home_room_id": "faf-cab",
+  "rooms": [
+    { "room_id": "faf-cab", "code": "faf-cab", "type": "homeroom", "wing": "block_1", "x": 0, "y": 0, "safe": true },
+    { "room_id": "lab-204", "code": "lab-204", "type": "laboratory", "wing": "block_1", "x": 2, "y": 1, "safe": false }
+  ],
+  "corridors": [{ "room_a": "faf-cab", "room_b": "lab-204" }],
+  "locked_wings": [{ "code": "engineering", "name": "Engineering Wing", "unlock_course_id": "math-101" }]
+}
+```
+
+---
+
+**`GET /api/v1/worlds/{lobby_id}/wings`**
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    { "code": "block_1", "name": "Block 1", "unlocked": true, "room_count": 12 },
+    { "code": "engineering", "name": "Engineering Wing", "unlocked": false, "unlock_course_id": "math-101", "room_count": 8 }
+  ]
+}
+```
+
+---
+
+**`GET /api/v1/worlds/{lobby_id}/rooms`** — rooms in unlocked wings. Query: `type`, `wing`, `safe`.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    {
+      "room_id": "lab-204",
+      "code": "lab-204",
+      "type": "laboratory",
+      "wing": "block_1",
+      "safe": false,
+      "node_count": 2,
+      "connects_to": ["faf-cab", "corridor-b"]
+    }
+  ]
+}
+```
+
+---
+
+**`GET /api/v1/rooms/{room_id}`** — one room with its nodes and spawn points. **Base Service calls
+this to validate a room exists before spending any resource on a barricade.**
+Headers: `Authorization: Bearer <jwt>` or `Bearer <service_jwt>`
+
+`200 OK`
+
+```json
+{
+  "room_id": "lab-204",
+  "code": "lab-204",
+  "type": "laboratory",
+  "wing": "block_1",
+  "safe": false,
+  "nodes": [
+    { "node_id": "node-metal-7", "item_id": "metal-01", "richness": 3, "depleted": false },
+    { "node_id": "node-elec-2", "item_id": "electronics-01", "richness": 1, "depleted": true, "depleted_until_day": 6 }
+  ],
+  "spawn_points": [{ "spawn_id": "spawn-11", "zombie_type_id": "tourist_zombie", "weight": 5, "night_only": true }],
+  "connects_to": ["faf-cab", "corridor-b"]
+}
+```
+
+Errors: `404 ROOM_NOT_FOUND` — the response Base Service relies on to reject a bad barricade request.
+
+---
+
+**`GET /api/v1/worlds/{lobby_id}/nodes`** — every node, for Game Service action validation. Query:
+`item_id`, `depleted`.
+Headers: `Authorization: Bearer <service_jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    { "node_id": "node-metal-7", "room_id": "lab-204", "item_id": "metal-01", "richness": 3, "pool_id": "pool-uuid-001", "depleted": false }
+  ]
+}
+```
+
+---
+
+**`GET /api/v1/worlds/{lobby_id}/spawns`** — spawn points for the current phase. Query: `phase`.
+Headers: `Authorization: Bearer <service_jwt>`
+
+`200 OK`
+
+```json
+{
+  "phase": "night",
+  "items": [
+    { "spawn_id": "spawn-11", "room_id": "lab-204", "zombie_type_id": "tourist_zombie", "weight": 5 },
+    { "spawn_id": "spawn-12", "room_id": "exam-hall-3", "zombie_type_id": "professor_zombie", "weight": 2 }
+  ]
+}
+```
+
+---
+
+**`POST /api/v1/worlds/{lobby_id}/unlock`** — unlock a wing. Triggered by `ExamPassed`. Generates the
+wing rooms and nodes, then creates their resource pools.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "course_id": "math-101", "player_id": "player-uuid-123" }
+```
+
+`200 OK`
+
+```json
+{
+  "wing": { "code": "engineering", "name": "Engineering Wing", "unlocked": true, "unlocked_at": "2026-09-09T11:24:12Z" },
+  "rooms_added": [
+    { "room_id": "eng-101", "type": "laboratory" },
+    { "room_id": "eng-102", "type": "classroom" }
+  ],
+  "nodes_added": 6,
+  "pools_created": 4
+}
+```
+
+`200 OK` with `"already_unlocked": true` if the wing was already open — unlocking is naturally
+idempotent. Errors: `422 NO_WING_FOR_COURSE`
+
+---
+
+**`PATCH /api/v1/rooms/{room_id}`** — mark a room safe or contested. Called by Game Service after a
+`clear_room` action or a night spawn.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "safe": true, "reason": "room_cleared" }
+```
+
+`200 OK` — `{ "room_id": "lab-204", "safe": true }`
+
+---
