@@ -1,0 +1,6 @@
+[submodule "base-service"]
+	path = base-service
+	url = https://github.com/Nick34567890/base-service.git
+[submodule "crafting-service"]
+	path = crafting-service
+	url = https://github.com/Nick34567890/crafting-service.git
