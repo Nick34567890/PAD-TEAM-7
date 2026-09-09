@@ -1,0 +1,6 @@
+[submodule "exam-service"]
+	path = exam-service
+	url = https://github.com/cyberArtik/exam-service.git
+[submodule "world-service"]
+	path = world-service
+	url = https://github.com/cyberArtik/world-service.git
