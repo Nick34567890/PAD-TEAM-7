@@ -2110,3 +2110,645 @@ Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
 `200 OK` — `{ "room_id": "lab-204", "safe": true }`
 
 ---
+
+### 7. Base Service
+
+**Owner:** Gancear Nichita · **TypeScript** · **Port `8007`** · [`base-service`](./base-service)
+
+Responsible for the **player survival base**, initially represented by the FAF Cab room. Manages base
+upgrades, barricades, facilities and defensive improvements. Players spend resources obtained through
+Resource Service to reinforce rooms, construct barricades, improve facilities, unlock storage
+capacity and decorate the homeroom.
+
+The base can also contain **Kiki**, whose interactions provide random booster objects or other
+rewards.
+
+> The service tracks the persistent state of the base separately from World Service: **World Service
+> owns the campus geography, while Base Service owns what the players have built or changed within
+> that geography.**
+
+**Calls out to:** Resource (consume materials) · World (validate a room exists) · Player (deliver
+Kiki rewards, verify cosmetic ownership) · Exam (facility unlock gating).
+**Consumed by:** Game (create base, apply barricade damage) · Crafting (workbench level check).
+
+#### Data model
+
+| Table | Key columns |
+| --- | --- |
+| `bases` | `base_id`, `lobby_id` (unique), `home_room_id`, `level`, `defense_rating`, `storage_capacity` |
+| `facilities` | `facility_id`, `base_id`, `type`, `level`, `status` |
+| `barricades` | `barricade_id`, `base_id`, `room_id`, `material`, `strength`, `health` |
+| `decorations` | `decoration_id`, `base_id`, `slot`, `item_id` |
+| `kiki_interactions` | `interaction_id`, `base_id`, `player_id`, `idempotency_key` (unique), `reward_item_id`, `day` |
+| `base_events` | `idempotency_key` (unique), `base_id`, `kind`, `payload`, `response` |
+
+#### Upgrade tiers
+
+| Base level | Cost | Defense | Storage |
+| --- | --- | --- | --- |
+| 1 → 2 | `wood-01` ×10, `metal-01` ×5 | 10 → 22 | 50 → 90 |
+| 2 → 3 | `wood-01` ×15, `metal-01` ×8 | 22 → 45 | 90 → 150 |
+| 3 → 4 | `wood-01` ×20, `metal-01` ×12 | 45 → 60 | 150 → 200 |
+| 4 → 5 | `metal-01` ×18, `electronics-01` ×4 | 60 → 85 | 200 → 280 |
+
+Maximum level is 10. Facilities: `workbench`, `generator`, `infirmary`, `storage`, `watchtower`.
+Barricade materials: `wood` (strength 30), `metal` (strength 60), `reinforced` (strength 100,
+requires base level ≥ 3).
+
+#### Endpoints
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `POST` | `/api/v1/bases` | service | Create the base for a lobby |
+| `GET` | `/api/v1/bases/{base_id}` | player | Full base state |
+| `GET` | `/api/v1/bases` | player | Find a base by lobby |
+| `GET` | `/api/v1/bases/{base_id}/blueprints` | player | Costs and unlock state |
+| `POST` | `/api/v1/bases/{base_id}/upgrade` | player | Raise the base one level |
+| `GET` | `/api/v1/bases/{base_id}/facilities` | player | List facilities |
+| `POST` | `/api/v1/bases/{base_id}/facilities` | player | Build or upgrade a facility |
+| `GET` | `/api/v1/bases/{base_id}/barricades` | player | List barricades |
+| `POST` | `/api/v1/bases/{base_id}/barricades` | player | Construct a barricade |
+| `PATCH` | `/api/v1/barricades/{barricade_id}` | player / service | Repair or damage |
+| `POST` | `/api/v1/bases/{base_id}/storage` | player | Unlock storage capacity |
+| `POST` | `/api/v1/bases/{base_id}/decorations` | player | Decorate the homeroom |
+| `POST` | `/api/v1/bases/{base_id}/kiki` | player | Interact with Kiki |
+
+---
+
+**`POST /api/v1/bases`** — create the base. Called by Game Service on lobby creation.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "lobby_id": "lobby-uuid-789", "home_room_id": "faf-cab" }
+```
+
+`201 Created`
+
+```json
+{
+  "base_id": "base-uuid-001",
+  "lobby_id": "lobby-uuid-789",
+  "home_room_id": "faf-cab",
+  "level": 1,
+  "defense_rating": 10,
+  "storage_capacity": 50,
+  "facilities": [],
+  "created_at": "2026-09-09T11:00:00Z"
+}
+```
+
+Errors: `409 BASE_ALREADY_EXISTS`
+
+---
+
+**`GET /api/v1/bases/{base_id}`**
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "base_id": "base-uuid-001",
+  "lobby_id": "lobby-uuid-789",
+  "home_room_id": "faf-cab",
+  "level": 3,
+  "defense_rating": 45,
+  "storage_capacity": 150,
+  "storage_used": 88,
+  "facilities": [
+    { "facility_id": "fac-uuid-01", "type": "workbench", "level": 2, "status": "operational" },
+    { "facility_id": "fac-uuid-02", "type": "generator", "level": 1, "status": "damaged" }
+  ],
+  "barricade_count": 4,
+  "decorations": [{ "slot": "wall_north", "item_id": "poster-faf-01" }],
+  "kiki": { "present": true, "fed_on_day": 4, "next_available_day": 5 }
+}
+```
+
+Errors: `404 BASE_NOT_FOUND`
+
+---
+
+**`GET /api/v1/bases?lobby_id={lobby_id}`** — lookup for callers holding only a lobby id. Response
+identical to the above.
+
+---
+
+**`GET /api/v1/bases/{base_id}/blueprints`** — next-tier costs and unlock state, so clients can
+render affordability without duplicating the cost table.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "base_id": "base-uuid-001",
+  "current_level": 3,
+  "next_level": 4,
+  "upgrade_cost": [
+    { "item_id": "wood-01", "count": 20 },
+    { "item_id": "metal-01", "count": 12 }
+  ],
+  "affordable": false,
+  "missing": [{ "item_id": "metal-01", "required": 12, "available": 9 }],
+  "facilities": [
+    {
+      "type": "workbench",
+      "current_level": 2,
+      "next_level": 3,
+      "cost": [{ "item_id": "metal-01", "count": 8 }],
+      "locked": false
+    },
+    {
+      "type": "infirmary",
+      "current_level": 0,
+      "next_level": 1,
+      "cost": [{ "item_id": "paper-01", "count": 10 }],
+      "locked": true,
+      "unlock_condition": { "type": "exam_passed", "value": "bio-101" }
+    }
+  ]
+}
+```
+
+---
+
+**`POST /api/v1/bases/{base_id}/upgrade`** — raise the base one level. Consumes materials through
+Resource Service, then applies the change locally in the same logical unit.
+Headers: `Authorization: Bearer <jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "player_id": "player-uuid-123" }
+```
+
+`200 OK`
+
+```json
+{
+  "base_id": "base-uuid-001",
+  "level": 4,
+  "defense_rating": 60,
+  "storage_capacity": 200,
+  "consumed": [
+    { "item_id": "wood-01", "count": 20 },
+    { "item_id": "metal-01", "count": 12 }
+  ],
+  "transaction_id": "tx-uuid-201"
+}
+```
+
+Errors: `409 INSUFFICIENT_RESOURCES` with `details.missing` · `422 MAX_LEVEL_REACHED`
+
+---
+
+**`POST /api/v1/bases/{base_id}/facilities`** — build if absent, upgrade if present.
+Headers: `Authorization: Bearer <jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "player_id": "player-uuid-123", "type": "workbench" }
+```
+
+`200 OK`
+
+```json
+{
+  "facility_id": "fac-uuid-01",
+  "base_id": "base-uuid-001",
+  "type": "workbench",
+  "level": 3,
+  "status": "operational",
+  "consumed": [{ "item_id": "metal-01", "count": 8 }],
+  "transaction_id": "tx-uuid-202"
+}
+```
+
+Errors: `403 FACILITY_LOCKED` with the unlock condition · `409 INSUFFICIENT_RESOURCES` ·
+`422 MAX_FACILITY_LEVEL`
+
+---
+
+**`GET /api/v1/bases/{base_id}/facilities`**
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    { "facility_id": "fac-uuid-01", "type": "workbench", "level": 3, "status": "operational" },
+    { "facility_id": "fac-uuid-02", "type": "generator", "level": 1, "status": "damaged" }
+  ]
+}
+```
+
+---
+
+**`POST /api/v1/bases/{base_id}/barricades`** — the room is validated against World Service **before**
+any material is spent.
+Headers: `Authorization: Bearer <jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "player_id": "player-uuid-123", "room_id": "lab-204", "material": "wood" }
+```
+
+`201 Created`
+
+```json
+{
+  "barricade_id": "barricade-uuid-001",
+  "base_id": "base-uuid-001",
+  "room_id": "lab-204",
+  "material": "wood",
+  "strength": 30,
+  "health": 30,
+  "built_by": "player-uuid-123",
+  "consumed": [{ "item_id": "wood-01", "count": 10 }]
+}
+```
+
+Errors: `404 ROOM_NOT_FOUND` (rejected upstream by World) · `409 ROOM_ALREADY_BARRICADED` ·
+`403 MATERIAL_REQUIRES_HIGHER_LEVEL` · `409 INSUFFICIENT_RESOURCES`
+
+---
+
+**`GET /api/v1/bases/{base_id}/barricades`** — query: `room_id`.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    { "barricade_id": "barricade-uuid-001", "room_id": "lab-204", "material": "wood", "strength": 30, "health": 18 }
+  ]
+}
+```
+
+---
+
+**`PATCH /api/v1/barricades/{barricade_id}`** — repair is player-initiated and costs materials; damage
+is applied by Game Service during a zombie attack and costs nothing.
+Headers: `Authorization: Bearer <jwt>` (repair) or `Bearer <service_jwt>` (damage) ·
+`Idempotency-Key: <uuid>`
+
+```json
+{ "operation": "repair", "player_id": "player-uuid-123" }
+```
+
+```json
+{ "operation": "damage", "amount": 12, "zombie_id": "zombie-uuid-001" }
+```
+
+`200 OK`
+
+```json
+{ "barricade_id": "barricade-uuid-001", "health": 30, "strength": 30, "destroyed": false }
+```
+
+When health reaches zero the barricade is removed and the response reports `"destroyed": true`.
+Errors: `404 BARRICADE_NOT_FOUND` · `409 INSUFFICIENT_RESOURCES` · `422 ALREADY_FULL_HEALTH`
+
+---
+
+**`POST /api/v1/bases/{base_id}/storage`** — unlock the next storage tier.
+Headers: `Authorization: Bearer <jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "player_id": "player-uuid-123" }
+```
+
+`200 OK`
+
+```json
+{
+  "base_id": "base-uuid-001",
+  "storage_capacity": 250,
+  "previous_capacity": 200,
+  "consumed": [{ "item_id": "metal-01", "count": 15 }]
+}
+```
+
+---
+
+**`POST /api/v1/bases/{base_id}/decorations`** — place a cosmetic the player already owns. Ownership
+is verified against Player Service.
+Headers: `Authorization: Bearer <jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "player_id": "player-uuid-123", "slot": "wall_north", "item_id": "poster-faf-01" }
+```
+
+`201 Created`
+
+```json
+{
+  "decoration_id": "decor-uuid-001",
+  "base_id": "base-uuid-001",
+  "slot": "wall_north",
+  "item_id": "poster-faf-01"
+}
+```
+
+Errors: `403 ITEM_NOT_OWNED` · `409 SLOT_OCCUPIED`
+
+---
+
+**`POST /api/v1/bases/{base_id}/kiki`** — feed Kiki and roll a weighted random reward, delivered to
+the player inventory through Player Service. Limited to **once per in-game day per player**.
+**Idempotency matters most here** — a replayed request would otherwise hand out a free second reward.
+Headers: `Authorization: Bearer <jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "player_id": "player-uuid-123", "offering": { "item_id": "food-01", "count": 2 } }
+```
+
+`200 OK`
+
+```json
+{
+  "interaction_id": "kiki-uuid-001",
+  "player_id": "player-uuid-123",
+  "mood": "pleased",
+  "reward": { "item_id": "energy-01", "name": "Energy Drink", "count": 1, "rarity": "uncommon" },
+  "next_available_day": 5
+}
+```
+
+Reward table: `common` 60 % (consumable ×1), `uncommon` 30 % (consumable ×2 or booster),
+`rare` 9 % (equipment), `legendary` 1 % (cosmetic). Errors: `429 KIKI_ALREADY_FED` with
+`next_available_day` · `409 INSUFFICIENT_RESOURCES` (no offering to give)
+
+---
+
+### 8. Crafting Service
+
+**Owner:** Gancear Nichita · **TypeScript** · **Port `8008`** · [`crafting-service`](./crafting-service)
+
+Allows players to combine resources into useful survival equipment. Recipes are defined by the
+service and can require resources obtained from different areas of the university. The service
+validates that the player has the required materials and **performs the crafting operation
+atomically**. Crafted objects are transferred to the player inventory through Player Service.
+
+Some recipes only become available after passing particular exams, reaching a certain level,
+unlocking a university wing or discovering a special resource.
+
+**Calls out to:** Resource (consume inputs, compensate) · Player (deliver output, read level) · Exam
+(passed courses) · World (unlocked wings) · Base (workbench level).
+**Consumed by:** Game (crafting from an in-game workbench action).
+
+#### Recipe catalogue
+
+| Recipe id | Name | Inputs | Output | Unlock |
+| --- | --- | --- | --- | --- |
+| `recipe-barricade-kit` | Barricade Kit | `wood-01` ×4, `metal-01` ×2 | `barricade-kit-01` ×1 | — |
+| `recipe-improvised-weapon` | Improvised Weapon | `paper-01` ×2, `metal-01` ×3 | `axe-01` ×1 | player level ≥ 2 |
+| `recipe-energy-booster` | Energy Booster | `food-01` ×3, `chemicals-01` ×1 | `energy-01` ×2 | — |
+| `recipe-zombie-detector` | Zombie Detector | `metal-01` ×5, `electronics-01` ×2 | `detector-01` ×1 | wing `engineering` unlocked |
+| `recipe-cheat-sheet` | Exam Cheat Sheet | `paper-01` ×5, `wood-01` ×1 | `cheatsheet-01` ×1 | course `math-101` passed |
+| `recipe-reinforced-plate` | Reinforced Plate | `metal-01` ×8, `textbook-01` ×2 | `plate-01` ×1 | workbench level ≥ 2 |
+
+#### Data model
+
+| Table | Key columns |
+| --- | --- |
+| `recipes` | `recipe_id`, `name`, `category`, `output_item_id`, `output_count`, `required_facility`, `required_facility_level` |
+| `recipe_inputs` | `recipe_id`, `item_id`, `count` |
+| `recipe_unlocks` | `recipe_id`, `condition_type`, `condition_value` |
+| `craft_jobs` | `job_id`, `idempotency_key` (unique), `player_id`, `recipe_id`, `status`, `consume_tx_id`, `deliver_ref`, `created_at` |
+
+`condition_type` ∈ `player_level`, `exam_passed`, `wing_unlocked`, `facility_level`,
+`resource_discovered`.
+`status` ∈ `pending`, `completed`, `failed`, `compensated`.
+
+#### The crafting saga
+
+Crafting spans three services, so it is an orchestrated saga with the craft job as the local source
+of truth:
+
+1. Resolve the recipe → `404 RECIPE_NOT_FOUND`.
+2. Evaluate unlock conditions against Player, Exam, World and Base → `403 RECIPE_LOCKED` or
+   `422 FACILITY_LEVEL_TOO_LOW`.
+3. Insert a `craft_job` carrying the caller idempotency key. **The unique index is the gate: on
+   conflict, return the stored result and stop.** A retry never crafts twice.
+4. `POST /api/v1/transactions/consume` on Resource Service, forwarding the same key. Resource Service
+   is itself idempotent, so a retried step 4 is safe. On insufficient stock → job `failed`, commit,
+   return `409`.
+5. `PATCH /api/v1/players/{id}/inventory` with `operation: add`, same key, to deliver the output.
+6. Mark the job `completed` and publish `ItemCrafted`.
+
+**Compensation.** If step 5 fails permanently after step 4 succeeded, the service calls
+`POST /api/v1/transactions/{consume_tx_id}/compensate` to return the materials, and marks the job
+`compensated`. **The player is never left having paid for an item they did not receive.**
+
+Because every step is keyed off one idempotency key, the saga is replayable from any point.
+
+#### Endpoints
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/recipes` | player | Recipe catalogue |
+| `GET` | `/api/v1/recipes/{recipe_id}` | player | Recipe detail |
+| `GET` | `/api/v1/recipes/available` | player | Catalogue annotated per player |
+| `POST` | `/api/v1/recipes/{recipe_id}/preview` | player | Dry run — craftable? |
+| `POST` | `/api/v1/crafts` | player | Craft, atomically and exactly once |
+| `GET` | `/api/v1/crafts/{job_id}` | player | Terminal state of a craft |
+| `GET` | `/api/v1/crafts` | player | Craft history |
+
+---
+
+**`GET /api/v1/recipes`** — the catalogue, independent of any player. Query: `category` ∈ `defense`,
+`weapon`, `consumable`, `utility`.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    {
+      "recipe_id": "recipe-barricade-kit",
+      "name": "Barricade Kit",
+      "category": "defense",
+      "inputs": [
+        { "item_id": "wood-01", "count": 4 },
+        { "item_id": "metal-01", "count": 2 }
+      ],
+      "output": { "item_id": "barricade-kit-01", "count": 1 },
+      "unlock_condition": null
+    },
+    {
+      "recipe_id": "recipe-cheat-sheet",
+      "name": "Exam Cheat Sheet",
+      "category": "utility",
+      "inputs": [
+        { "item_id": "paper-01", "count": 5 },
+        { "item_id": "wood-01", "count": 1 }
+      ],
+      "output": { "item_id": "cheatsheet-01", "count": 1 },
+      "unlock_condition": { "type": "exam_passed", "value": "math-101" }
+    }
+  ]
+}
+```
+
+---
+
+**`GET /api/v1/recipes/{recipe_id}`**
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "recipe_id": "recipe-zombie-detector",
+  "name": "Zombie Detector",
+  "category": "utility",
+  "description": "Beeps when a Professor Zombie is within three rooms.",
+  "inputs": [
+    { "item_id": "metal-01", "count": 5 },
+    { "item_id": "electronics-01", "count": 2 }
+  ],
+  "output": { "item_id": "detector-01", "count": 1 },
+  "unlock_condition": { "type": "wing_unlocked", "value": "engineering" },
+  "required_facility": { "type": "workbench", "level": 2 }
+}
+```
+
+Errors: `404 RECIPE_NOT_FOUND`
+
+---
+
+**`GET /api/v1/recipes/available?player_id={player_id}&lobby_id={lobby_id}`** — the catalogue
+annotated per player, with the reason each locked recipe is locked.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    { "recipe_id": "recipe-barricade-kit", "name": "Barricade Kit", "unlocked": true },
+    {
+      "recipe_id": "recipe-cheat-sheet",
+      "name": "Exam Cheat Sheet",
+      "unlocked": false,
+      "locked_reason": "Requires passing course math-101.",
+      "unlock_condition": { "type": "exam_passed", "value": "math-101" }
+    }
+  ]
+}
+```
+
+---
+
+**`POST /api/v1/recipes/{recipe_id}/preview`** — evaluate unlocks **and** material availability
+without consuming anything, so a client can grey out a button instead of discovering the failure by
+attempting a craft.
+Headers: `Authorization: Bearer <jwt>`
+
+```json
+{ "player_id": "player-uuid-123", "lobby_id": "lobby-uuid-789", "base_id": "base-uuid-001" }
+```
+
+`200 OK`
+
+```json
+{
+  "recipe_id": "recipe-zombie-detector",
+  "craftable": false,
+  "unlocked": true,
+  "missing_materials": [{ "item_id": "electronics-01", "required": 2, "available": 0 }],
+  "facility_ok": true
+}
+```
+
+---
+
+**`POST /api/v1/crafts`** — craft an item, atomically and exactly once.
+Headers: `Authorization: Bearer <jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{
+  "player_id": "player-uuid-123",
+  "recipe_id": "recipe-barricade-kit",
+  "lobby_id": "lobby-uuid-789",
+  "base_id": "base-uuid-001"
+}
+```
+
+`201 Created`
+
+```json
+{
+  "job_id": "craft-uuid-001",
+  "player_id": "player-uuid-123",
+  "recipe_id": "recipe-barricade-kit",
+  "status": "completed",
+  "consumed": [
+    { "item_id": "wood-01", "count": 4 },
+    { "item_id": "metal-01", "count": 2 }
+  ],
+  "produced": { "item_id": "barricade-kit-01", "count": 1 },
+  "consume_tx_id": "tx-uuid-091",
+  "completed_at": "2026-09-09T12:30:00Z"
+}
+```
+
+A replayed key returns `200 OK` with the identical body and `"replayed": true`. Nothing is crafted or
+consumed a second time.
+
+`409 INSUFFICIENT_RESOURCES`
+
+```json
+{
+  "error": {
+    "code": "INSUFFICIENT_RESOURCES",
+    "message": "Not enough materials to craft Barricade Kit.",
+    "details": { "job_id": "craft-uuid-002", "status": "failed", "missing": [{ "item_id": "metal-01", "required": 2, "available": 1 }] }
+  }
+}
+```
+
+Other errors: `403 RECIPE_LOCKED` with the unlock condition · `422 FACILITY_LEVEL_TOO_LOW` ·
+`500 CRAFT_COMPENSATED` when delivery failed and the materials were returned.
+
+---
+
+**`GET /api/v1/crafts/{job_id}`** — the terminal state of a craft, for confirming an outcome after a
+timeout rather than retrying blindly.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "job_id": "craft-uuid-001",
+  "player_id": "player-uuid-123",
+  "recipe_id": "recipe-barricade-kit",
+  "status": "completed",
+  "consume_tx_id": "tx-uuid-091",
+  "created_at": "2026-09-09T12:29:58Z",
+  "completed_at": "2026-09-09T12:30:00Z"
+}
+```
+
+Errors: `404 CRAFT_JOB_NOT_FOUND`
+
+---
+
+**`GET /api/v1/crafts?player_id={player_id}`** — craft history. Query: `status`, `limit`, `cursor`.
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    { "job_id": "craft-uuid-001", "recipe_id": "recipe-barricade-kit", "status": "completed", "completed_at": "2026-09-09T12:30:00Z" },
+    { "job_id": "craft-uuid-002", "recipe_id": "recipe-zombie-detector", "status": "failed", "created_at": "2026-09-09T12:31:00Z" }
+  ],
+  "next_cursor": null
+}
+```
+
+---
