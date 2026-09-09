@@ -792,3 +792,626 @@ after a reconnect are safe, because every downstream write is keyed by idempoten
 
 ---
 
+### 5. Zombie Service
+
+**Owner:** Roenco Maxim · **Go** · **Port `8005`** · [`zombie-service`](./zombie-service)
+
+Owns the **persistent definitions and state of zombies**: types, statistics, behaviour
+configuration, sprites and special abilities, plus every live instance and what it is carrying.
+
+Two major categories are mandatory:
+
+- **Professor Zombies** — retain their academic behaviour and can initiate exams against players.
+- **Tourist Zombies** — behave as a roaming horde and can steal resources or XP.
+
+Further variants differ in movement speed, health, attack strength, perception radius and special
+behaviour.
+
+**Stolen goods are held by the instance.** When a Tourist Zombie steals from a player or a resource
+node, the items sit in that zombie inventory until it is killed, at which point the whole inventory
+transfers atomically to the killer. This is what makes hunting a laden zombie worthwhile, and it is
+why zombie instances are persistent rather than ephemeral.
+
+**Calls out to:** Player (steal or restore XP and items) · Resource (deduct from a node pool on a
+world steal).
+**Consumed by:** Game (type configs, spawning, encounter and kill resolution).
+
+#### Zombie types
+
+| `type_id` | Name | HP | Damage | Speed | Perception | Special behaviour |
+| --- | --- | --- | --- | --- | --- | --- |
+| `professor_zombie` | Professor Zombie | 120 | 15 | 1.0 | 5 | Initiates an exam instead of attacking |
+| `tourist_zombie` | Tourist Zombie | 70 | 10 | 1.5 | 4 | Steals up to 2 item stacks, then flees |
+| `caffeinated_sprinter` | Caffeinated Sprinter | 50 | 8 | 3.0 | 7 | Cannot be outrun; ignores barricades below strength 20 |
+| `bureaucrat` | Bureaucrat | 200 | 5 | 0.6 | 3 | Halves XP gain while alive in the room |
+| `night_owl` | Night Owl | 90 | 20 | 1.2 | 6 | Damage doubles during the night phase |
+
+#### Data model
+
+| Table | Key columns |
+| --- | --- |
+| `zombie_types` | `type_id`, `name`, `health`, `damage`, `speed`, `perception_radius`, `sprite`, `loot_table_id` |
+| `behaviours` | `behaviour_id`, `type_id`, `trigger`, `action`, `params` |
+| `zombie_instances` | `zombie_id`, `type_id`, `lobby_id`, `room_id`, `health`, `state`, `spawned_at` |
+| `instance_inventory` | `zombie_id`, `item_id`, `count` |
+| `theft_events` | `idempotency_key` (unique), `zombie_id`, `victim_type`, `victim_id`, `payload` |
+
+#### Endpoints
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/zombie-types` | player / service | Type registry |
+| `GET` | `/api/v1/zombie-types/{type_id}` | player / service | Type with behaviours |
+| `POST` | `/api/v1/zombies` | service | Spawn an instance |
+| `GET` | `/api/v1/lobbies/{lobby_id}/zombies` | service | Live instances |
+| `GET` | `/api/v1/zombies/{zombie_id}` | service | One instance with inventory |
+| `POST` | `/api/v1/zombies/{zombie_id}/steal` | service | Record a theft |
+| `POST` | `/api/v1/zombies/{zombie_id}/damage` | service | Apply damage |
+| `POST` | `/api/v1/zombies/{zombie_id}/kill` | service | Kill and transfer loot |
+| `DELETE` | `/api/v1/zombies/{zombie_id}` | service | Despawn at cycle end |
+
+---
+
+**`GET /api/v1/zombie-types`** — the registry. Query: `category` ∈ `professor`, `tourist`, `variant`.
+Headers: `Authorization: Bearer <jwt>` or `Bearer <service_jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    {
+      "type_id": "professor_zombie",
+      "name": "Professor Zombie",
+      "category": "professor",
+      "health": 120,
+      "damage": 15,
+      "speed": 1.0,
+      "perception_radius": 5,
+      "sprite": "sprites/professor.png",
+      "can_initiate_exam": true
+    },
+    {
+      "type_id": "tourist_zombie",
+      "name": "Tourist Zombie",
+      "category": "tourist",
+      "health": 70,
+      "damage": 10,
+      "speed": 1.5,
+      "perception_radius": 4,
+      "sprite": "sprites/tourist.png",
+      "can_steal": true
+    }
+  ]
+}
+```
+
+---
+
+**`GET /api/v1/zombie-types/{type_id}`** — a type with its full behaviour rules.
+Headers: `Authorization: Bearer <jwt>` or `Bearer <service_jwt>`
+
+`200 OK`
+
+```json
+{
+  "type_id": "tourist_zombie",
+  "name": "Tourist Zombie",
+  "category": "tourist",
+  "health": 70,
+  "damage": 10,
+  "speed": 1.5,
+  "perception_radius": 4,
+  "loot_table_id": "loot-tourist-01",
+  "behaviours": [
+    { "trigger": "player_within_radius", "action": "chase", "params": { "radius": 4 } },
+    { "trigger": "reached_player", "action": "steal_items", "params": { "max_stacks": 2 } },
+    { "trigger": "steal_succeeded", "action": "flee_to_room", "params": { "prefer": "corridor" } },
+    { "trigger": "phase_day", "action": "despawn", "params": {} }
+  ]
+}
+```
+
+Errors: `404 ZOMBIE_TYPE_NOT_FOUND`
+
+---
+
+**`POST /api/v1/zombies`** — spawn an instance. Called by Game Service on a night cycle.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "type_id": "tourist_zombie", "lobby_id": "lobby-uuid-789", "room_id": "lab-204", "spawn_id": "spawn-11" }
+```
+
+`201 Created`
+
+```json
+{
+  "zombie_id": "zombie-uuid-002",
+  "type_id": "tourist_zombie",
+  "lobby_id": "lobby-uuid-789",
+  "room_id": "lab-204",
+  "health": 70,
+  "max_health": 70,
+  "state": "roaming",
+  "inventory": [],
+  "spawned_at": "2026-09-09T21:00:00Z"
+}
+```
+
+`state` ∈ `roaming`, `chasing`, `stealing`, `fleeing`, `examining`, `dead`.
+
+---
+
+**`GET /api/v1/lobbies/{lobby_id}/zombies`** — live instances with inventories. Query: `room_id`,
+`state`.
+Headers: `Authorization: Bearer <service_jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    {
+      "zombie_id": "zombie-uuid-001",
+      "type_id": "professor_zombie",
+      "room_id": "exam-hall-3",
+      "health": 120,
+      "state": "roaming",
+      "inventory": []
+    },
+    {
+      "zombie_id": "zombie-uuid-002",
+      "type_id": "tourist_zombie",
+      "room_id": "corridor-b",
+      "health": 55,
+      "state": "fleeing",
+      "inventory": [
+        { "item_id": "coffee-01", "count": 1 },
+        { "item_id": "metal-01", "count": 3 }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+**`GET /api/v1/zombies/{zombie_id}`** — one instance.
+Headers: `Authorization: Bearer <service_jwt>` · `200 OK` — the item shape above.
+Errors: `404 ZOMBIE_NOT_FOUND`
+
+---
+
+**`POST /api/v1/zombies/{zombie_id}/steal`** — record a theft. `victim_type` `player` deducts from
+Player Service inventory or XP; `node` deducts from the room pool in Resource Service. Either way the
+goods land in this zombie inventory.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{
+  "victim_type": "player",
+  "victim_id": "player-uuid-123",
+  "items": [{ "item_id": "sandwich-01", "count": 1 }],
+  "xp": 0
+}
+```
+
+`200 OK`
+
+```json
+{
+  "zombie_id": "zombie-uuid-002",
+  "stolen": [{ "item_id": "sandwich-01", "count": 1 }],
+  "xp_stolen": 0,
+  "state": "fleeing",
+  "inventory": [
+    { "item_id": "coffee-01", "count": 1 },
+    { "item_id": "metal-01", "count": 3 },
+    { "item_id": "sandwich-01", "count": 1 }
+  ]
+}
+```
+
+If the victim holds nothing, the response is `200 OK` with an empty `stolen` array — a failed theft
+is a game outcome, not an error. Errors: `409 IDEMPOTENCY_KEY_REUSED` · `422 ZOMBIE_ALREADY_DEAD`
+
+---
+
+**`POST /api/v1/zombies/{zombie_id}/damage`** — apply damage from a player attack.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "amount": 25, "source_player_id": "player-uuid-123", "weapon_item_id": "axe-01" }
+```
+
+`200 OK`
+
+```json
+{ "zombie_id": "zombie-uuid-002", "health": 30, "max_health": 70, "state": "fleeing", "killed": false }
+```
+
+When health reaches zero the response carries `"killed": true`, and Game Service must follow with the
+kill call to collect the loot.
+
+---
+
+**`POST /api/v1/zombies/{zombie_id}/kill`** — kill the instance and transfer its **entire inventory**
+to the killer, atomically, through Player Service. Also rolls the loot table for the type.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "killer_player_id": "player-uuid-123", "lobby_id": "lobby-uuid-789" }
+```
+
+`200 OK`
+
+```json
+{
+  "zombie_id": "zombie-uuid-002",
+  "type_id": "tourist_zombie",
+  "killer_player_id": "player-uuid-123",
+  "transferred_items": [
+    { "item_id": "coffee-01", "count": 1 },
+    { "item_id": "metal-01", "count": 3 },
+    { "item_id": "sandwich-01", "count": 1 }
+  ],
+  "loot_rolled": [{ "item_id": "energy-01", "count": 1 }],
+  "xp_awarded": 40,
+  "state": "dead",
+  "despawned": true
+}
+```
+
+If the transfer to Player Service fails permanently, the zombie is **not** marked dead and the
+inventory is retained — the kill is retried rather than silently destroying the loot. Errors:
+`404 ZOMBIE_NOT_FOUND` · `422 ZOMBIE_ALREADY_DEAD` · `503 DEPENDENCY_UNAVAILABLE`
+
+---
+
+**`DELETE /api/v1/zombies/{zombie_id}`** — despawn at dawn. **Any inventory still held is returned to
+the resource pool it came from**, so goods are never destroyed by the cycle boundary.
+Headers: `Authorization: Bearer <service_jwt>`
+
+`200 OK`
+
+```json
+{
+  "zombie_id": "zombie-uuid-002",
+  "despawned": true,
+  "inventory_returned": [{ "item_id": "metal-01", "count": 3 }]
+}
+```
+
+---
+
+### 6. Resource Service
+
+**Owner:** Roenco Maxim · **Go** · **Port `8006`** · [`resource-service`](./resource-service)
+
+Owns the **resource economy of the university, independently from the physical map**. Tracks
+resources such as wood, metal scraps, paper and food — their quantities and where they were
+gathered. When Game Service starts a timed gathering action, Resource Service is responsible for
+validating and applying the eventual resource change to the relevant node or player.
+
+It also handles resource consumption for barricading rooms, upgrading the base, crafting items and
+feeding Kiki.
+
+> This separation means Game Service can manage *"the player is scavenging for five minutes"* while
+> Resource Service owns *"the player received twelve food when the action completed."*
+
+**Every mutating operation is idempotent**, so reconnects or duplicated completion events cannot
+award resources twice. This is the single most important correctness property in the system, because
+Resource Service is the shared write hub: Game, World, Zombie, Base and Crafting all mutate stock
+through it.
+
+**Calls out to:** nothing during a transaction — Resource Service is deliberately a leaf on the write
+path so that no remote failure can leave a partial ledger.
+**Consumed by:** Game (gather) · Base (consume) · Crafting (consume, compensate) · Zombie (node
+theft) · World (pool creation).
+
+#### Data model
+
+| Table | Key columns |
+| --- | --- |
+| `pools` | `pool_id`, `lobby_id`, `room_id`, `node_id`, `kind`, `created_at` |
+| `pool_stock` | `pool_id`, `item_id`, `stock` — composite primary key |
+| `player_resources` | `player_id`, `lobby_id`, `item_id`, `amount` |
+| `transactions` | `transaction_id`, `idempotency_key` (unique), `type`, `source`, `target`, `items`, `status`, `response`, `created_at` |
+
+`kind` ∈ `node` (a world resource node), `player` (a player carrying raw materials), `lobby` (a
+shared stockpile).
+
+#### Idempotency, concretely
+
+```sql
+CREATE UNIQUE INDEX idx_tx_idem ON transactions (idempotency_key);
+```
+
+Every write opens a transaction, attempts the insert, and on a unique-violation returns the stored
+`response` column verbatim without touching stock. That single index is what makes a replayed
+WebSocket completion event harmless.
+
+#### Endpoints
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `POST` | `/api/v1/pools` | service | Create a pool |
+| `GET` | `/api/v1/pools` | service | List pools |
+| `GET` | `/api/v1/pools/{pool_id}` | service | One pool with stock |
+| `GET` | `/api/v1/players/{player_id}/resources` | player | A player raw materials |
+| `POST` | `/api/v1/transactions/gather` | service | Node → player, idempotent |
+| `POST` | `/api/v1/transactions/consume` | service | Player → sink, idempotent |
+| `POST` | `/api/v1/transactions/transfer` | service | Pool → pool, idempotent |
+| `GET` | `/api/v1/transactions/{transaction_id}` | service | Verify a transaction |
+| `POST` | `/api/v1/transactions/{transaction_id}/compensate` | service | Reverse a transaction |
+
+---
+
+**`POST /api/v1/pools`** — create a pool. Called by World Service on world generation and on each
+wing unlock.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{
+  "lobby_id": "lobby-uuid-789",
+  "room_id": "lab-204",
+  "node_id": "node-metal-7",
+  "kind": "node",
+  "initial_stock": [
+    { "item_id": "metal-01", "count": 15 },
+    { "item_id": "electronics-01", "count": 4 }
+  ]
+}
+```
+
+`201 Created`
+
+```json
+{
+  "pool_id": "pool-uuid-001",
+  "lobby_id": "lobby-uuid-789",
+  "room_id": "lab-204",
+  "node_id": "node-metal-7",
+  "kind": "node",
+  "stock": [
+    { "item_id": "metal-01", "count": 15 },
+    { "item_id": "electronics-01", "count": 4 }
+  ]
+}
+```
+
+Errors: `409 POOL_ALREADY_EXISTS`
+
+---
+
+**`GET /api/v1/pools`** — list pools. Query: `lobby_id`, `room_id`, `kind`.
+Headers: `Authorization: Bearer <service_jwt>`
+
+`200 OK`
+
+```json
+{
+  "items": [
+    {
+      "pool_id": "pool-uuid-001",
+      "room_id": "lab-204",
+      "kind": "node",
+      "stock": [
+        { "item_id": "metal-01", "count": 12 },
+        { "item_id": "electronics-01", "count": 4 }
+      ]
+    },
+    {
+      "pool_id": "pool-uuid-002",
+      "room_id": "canteen",
+      "kind": "node",
+      "stock": [
+        { "item_id": "food-01", "count": 30 },
+        { "item_id": "coffee-01", "count": 15 }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+**`GET /api/v1/pools/{pool_id}`**
+Headers: `Authorization: Bearer <service_jwt>` · `200 OK` — the item shape above.
+Errors: `404 POOL_NOT_FOUND`
+
+---
+
+**`GET /api/v1/players/{player_id}/resources`** — raw materials a player is carrying in a lobby.
+Distinct from Player Service inventory, which holds finished goods. Query: `lobby_id` (required).
+Headers: `Authorization: Bearer <jwt>`
+
+`200 OK`
+
+```json
+{
+  "player_id": "player-uuid-123",
+  "lobby_id": "lobby-uuid-789",
+  "resources": [
+    { "item_id": "wood-01", "amount": 24 },
+    { "item_id": "metal-01", "amount": 9 },
+    { "item_id": "paper-01", "amount": 5 }
+  ]
+}
+```
+
+---
+
+**`POST /api/v1/transactions/gather`** — a completed gathering action. Deducts from the node pool and
+credits the player. **The endpoint a replayed WebSocket completion hits.**
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{
+  "lobby_id": "lobby-uuid-789",
+  "player_id": "player-uuid-123",
+  "source_pool_id": "pool-uuid-001",
+  "items": [{ "item_id": "metal-01", "count": 3 }],
+  "reason": "action_completed",
+  "action_id": "action-uuid-001"
+}
+```
+
+`200 OK`
+
+```json
+{
+  "transaction_id": "tx-uuid-044",
+  "idempotency_key": "idem-uuid-abc",
+  "type": "gather",
+  "status": "completed",
+  "items_moved": [{ "item_id": "metal-01", "count": 3 }],
+  "player_balance": [{ "item_id": "metal-01", "amount": 12 }],
+  "pool_remaining": [{ "item_id": "metal-01", "count": 9 }],
+  "replayed": false,
+  "created_at": "2026-09-09T11:10:00Z"
+}
+```
+
+A repeat of the same key returns the identical body with `"replayed": true` and **no stock change**.
+If the pool holds less than requested, the transaction moves what is available and reports
+`"partial": true` — a depleted node yields less rather than failing the action. Errors:
+`404 POOL_NOT_FOUND` · `409 IDEMPOTENCY_KEY_REUSED` (same key, different payload)
+
+---
+
+**`POST /api/v1/transactions/consume`** — spend a player raw materials. Called by Base (upgrades,
+barricades) and Crafting (recipe inputs). **Atomic across the whole item list** — either every line
+is deducted or none is.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{
+  "lobby_id": "lobby-uuid-789",
+  "player_id": "player-uuid-123",
+  "items": [
+    { "item_id": "wood-01", "count": 4 },
+    { "item_id": "metal-01", "count": 2 }
+  ],
+  "reason": "craft",
+  "reference_id": "craft-uuid-001"
+}
+```
+
+`200 OK`
+
+```json
+{
+  "transaction_id": "tx-uuid-091",
+  "type": "consume",
+  "status": "completed",
+  "items_consumed": [
+    { "item_id": "wood-01", "count": 4 },
+    { "item_id": "metal-01", "count": 2 }
+  ],
+  "player_balance": [
+    { "item_id": "wood-01", "amount": 20 },
+    { "item_id": "metal-01", "amount": 10 }
+  ],
+  "replayed": false
+}
+```
+
+`409 INSUFFICIENT_RESOURCES`
+
+```json
+{
+  "error": {
+    "code": "INSUFFICIENT_RESOURCES",
+    "message": "Player does not hold enough materials.",
+    "details": { "missing": [{ "item_id": "metal-01", "required": 2, "available": 1 }] }
+  }
+}
+```
+
+---
+
+**`POST /api/v1/transactions/transfer`** — move stock between pools. Used for zombie node theft and
+for returning a despawned zombie inventory.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{
+  "from_pool_id": "pool-uuid-001",
+  "to_pool_id": "pool-uuid-zombie-002",
+  "items": [{ "item_id": "metal-01", "count": 3 }],
+  "reason": "zombie_theft"
+}
+```
+
+`200 OK`
+
+```json
+{
+  "transaction_id": "tx-uuid-112",
+  "type": "transfer",
+  "status": "completed",
+  "items_moved": [{ "item_id": "metal-01", "count": 3 }],
+  "replayed": false
+}
+```
+
+Errors: `409 INSUFFICIENT_RESOURCES` · `404 POOL_NOT_FOUND`
+
+---
+
+**`GET /api/v1/transactions/{transaction_id}`** — verify a transaction. Callers use this to confirm
+an outcome after a timeout instead of retrying blindly.
+Headers: `Authorization: Bearer <service_jwt>`
+
+`200 OK`
+
+```json
+{
+  "transaction_id": "tx-uuid-091",
+  "idempotency_key": "idem-uuid-def",
+  "type": "consume",
+  "status": "completed",
+  "player_id": "player-uuid-123",
+  "items": [
+    { "item_id": "wood-01", "count": 4 },
+    { "item_id": "metal-01", "count": 2 }
+  ],
+  "reason": "craft",
+  "reference_id": "craft-uuid-001",
+  "compensated_by": null,
+  "created_at": "2026-09-09T12:30:00Z"
+}
+```
+
+`status` ∈ `completed`, `failed`, `compensated`. Errors: `404 TRANSACTION_NOT_FOUND`
+
+---
+
+**`POST /api/v1/transactions/{transaction_id}/compensate`** — reverse a completed transaction. The
+compensation is itself keyed, so a retried compensation does not double-refund.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <uuid>`
+
+```json
+{ "reason": "crafting_delivery_failed" }
+```
+
+`200 OK`
+
+```json
+{
+  "transaction_id": "tx-uuid-091",
+  "status": "compensated",
+  "compensation_transaction_id": "tx-uuid-092",
+  "items_restored": [
+    { "item_id": "wood-01", "count": 4 },
+    { "item_id": "metal-01", "count": 2 }
+  ]
+}
+```
+
+Errors: `422 ALREADY_COMPENSATED` · `422 CANNOT_COMPENSATE_FAILED_TRANSACTION`
+
+---
+
