@@ -29,6 +29,13 @@ services themselves live in private repositories linked here as submodules.
 
 Supporting infrastructure: **API Gateway** on `8080`, **Service Registry** on `8500`.
 
+![System architecture: game client, API gateway on 8080, the eight services grouped by language with one database each, and the service registry on 8500](png_arh/architecture.png)
+
+Every request from the client enters through the gateway, which terminates TLS, validates the JWT
+and routes on path. Services find each other through the registry rather than through hardcoded
+hosts. Note that each service reaches exactly one database and no other — that single rule is what
+the rest of this document is built to protect.
+
 ---
 
 ## Table of contents
@@ -129,6 +136,10 @@ over WebSockets, and a client reconnect can replay a completion event. Without t
 connection during a scavenge awards the resources twice, and the economy is unrecoverable within a
 session.
 
+![Timed action sequence: a scavenge action completes, the client drops and reconnects, and the replayed gather returns replayed=true with stock unchanged](png_arh/architecture-timed-action.png)
+
+The reconnect at step 9 is the case worth reading twice: the same `Idempotency-Key` reaches Resource Service a second time, and the reply is `replayed=true` with the stock untouched. The player sees the same reward, not a second one.
+
 ### Sagas and compensation
 
 Operations spanning services are **orchestrated sagas**. The initiating service writes a durable job
@@ -145,6 +156,12 @@ Three sagas exist in this system:
 
 Because every step is keyed, a saga is safe to replay from any point. Each orchestrator exposes a
 `GET` on its job resource so callers can confirm the terminal state instead of retrying blindly.
+
+The craft saga in full, including both failure branches:
+
+![Craft saga sequence: recipe resolution, unlock check, durable job row, material consumption, and either delivery or compensation returning the materials](png_arh/architecture-craft-saga.png)
+
+The branch at step 13 is the one that justifies the whole pattern. Materials are already gone and delivery has failed permanently, so the orchestrator calls `compensate`, restores the pool, and ends the job as `compensated` — the client gets an error and has lost nothing.
 
 ---
 
@@ -1421,6 +1438,12 @@ Asynchronous events are facts that already happened. A publisher never waits for
 consumer that is down must be able to catch up — so every event carries an `event_id` and consumers
 deduplicate on it exactly as endpoints deduplicate on `Idempotency-Key`.
 
+A worked example — passing an exam unlocks a new wing of the map, across five services:
+
+![Exam unlock sequence: a professor zombie triggers an exam, passing it awards XP and publishes ExamPassed, World generates a new wing and resource pools, and WingUnlocked reaches the client](png_arh/architecture-exam-unlock.png)
+
+Steps 1 to 12 are synchronous — the player is waiting. Steps 13 onward are events: Exam Service publishes `ExamPassed` and stops caring. If World Service were down, the wing would appear when it came back, and the grade would still have been recorded.
+
 Envelope:
 
 ```json
@@ -1490,6 +1513,10 @@ than discovered during a demo.
 Every service encapsulates exactly one domain and owns the data for that domain alone. The *does not
 own* column is the important one — it is what stops this design collapsing into a distributed
 monolith.
+
+![Inter-service call graph: every synchronous call and asynchronous event between the eight services, labelled with what each call carries](png_arh/architecture-services.png)
+
+Solid arrows are synchronous HTTP calls, dotted arrows are asynchronous events. Read it as the dependency graph: Player and Resource are called by almost everyone and call almost no one, which is what you want from the two services holding the economy.
 
 | Service | Owns | Does **not** own |
 | --- | --- | --- |
@@ -2906,7 +2933,8 @@ issue is closed by the PR; and the Project board card has moved to **Done** auto
 ├── .github/
 │   ├── PULL_REQUEST_TEMPLATE.md
 │   └── CODEOWNERS
-├── docs/                              ← architecture diagrams (to be added)
+├── docs/                              ← written architecture notes
+├── png_arh/                           ← architecture diagrams used by this README
 ├── guide-private.md                   ← how to create and link the private repos
 ├── player-service/                    ← submodule (private)
 ├── game-service/                      ← submodule (private)
