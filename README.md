@@ -34,6 +34,7 @@ Supporting infrastructure: **API Gateway** on `8080`, **Service Registry** on `8
 ## Table of contents
 
 - [Team and ownership](#team-and-ownership)
+- [Architecture](#architecture)
 - [Service boundaries](#service-boundaries)
 - [Technology choices and trade-offs](#technology-choices-and-trade-offs)
 - [Data management](#data-management)
@@ -53,6 +54,13 @@ Supporting infrastructure: **API Gateway** on `8080`, **Service Registry** on `8
 - [GitHub workflow](#github-workflow)
 - [Repository layout](#repository-layout)
 - [Glossary](#glossary)
+
+---
+
+## Architecture
+
+The service topology, communication directions, and runtime rules are documented in
+[docs/architecture.md](./docs/architecture.md).
 
 ---
 
@@ -2906,7 +2914,7 @@ issue is closed by the PR; and the Project board card has moved to **Done** auto
 ├── .github/
 │   ├── PULL_REQUEST_TEMPLATE.md
 │   └── CODEOWNERS
-├── docs/                              ← architecture diagrams (to be added)
+├── docs/                              ← architecture diagrams
 ├── guide-private.md                   ← how to create and link the private repos
 ├── player-service/                    ← submodule (private)
 ├── game-service/                      ← submodule (private)
