@@ -54,6 +54,8 @@ Supporting infrastructure: **API Gateway** on `8080`, **Service Registry** on `8
 - [Repository layout](#repository-layout)
 - [Glossary](#glossary)
 
+---
+
 ## Team and ownership
 
 Each member owns two services end to end: schema, implementation, tests, deployment and the section
