@@ -16,3 +16,9 @@
 [submodule "player-service"]
 	path = player-service
 	url = https://github.com/MaxRoenco/player-service.git
+[submodule "zombie-service"]
+	path = zombie-service
+	url = https://github.com/MaxRoenco/zombie-service.git
+[submodule "resource-service"]
+	path = resource-service
+	url = https://github.com/MaxRoenco/resource-service.git
