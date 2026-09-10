@@ -10,3 +10,9 @@
 [submodule "crafting-service"]
 	path = crafting-service
 	url = https://github.com/Nick34567890/crafting-service.git
+[submodule "game-service"]
+	path = game-service
+	url = https://github.com/MaxRoenco/game-service.git
+[submodule "player-service"]
+	path = player-service
+	url = https://github.com/MaxRoenco/player-service.git
