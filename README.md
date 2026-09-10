@@ -29,12 +29,14 @@ services themselves live in private repositories linked here as submodules.
 
 Supporting infrastructure: **API Gateway** on `8080`, **Service Registry** on `8500`.
 
-![System architecture: game client, API gateway on 8080, the eight services grouped by language with one database each, and the service registry on 8500](png_arh/architecture.png)
+![System architecture: game client, API gateway on 8080, the eight services grouped by language and owner with one database each, and the service registry on 8500](png_arh/architecture.drawio.png)
 
 Every request from the client enters through the gateway, which terminates TLS, validates the JWT
 and routes on path. Services find each other through the registry rather than through hardcoded
 hosts. Note that each service reaches exactly one database and no other — that single rule is what
 the rest of this document is built to protect.
+
+*The diagram is an editable draw.io file — open `png_arh/architecture.drawio.png` at [app.diagrams.net](https://app.diagrams.net) to change it, and re-export over the same file so the picture and its source never drift apart.*
 
 ---
 
