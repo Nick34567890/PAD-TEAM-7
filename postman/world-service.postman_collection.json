@@ -1,0 +1,1014 @@
+{
+  "info": {
+    "name": "PAD TEAM 7 — World Service",
+    "description": "World Service (port 8004) — see section 4 of the CPR README. Run the folders in order (Collection Runner works). Needs AUTH_DEV_TOKENS=true for the test tokens.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{player_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "world_url",
+      "value": "http://localhost:8004/api/v1"
+    },
+    {
+      "key": "player_id",
+      "value": "player-postman"
+    },
+    {
+      "key": "lobby_id",
+      "value": ""
+    },
+    {
+      "key": "player_token",
+      "value": ""
+    },
+    {
+      "key": "other_player_token",
+      "value": ""
+    },
+    {
+      "key": "service_token",
+      "value": ""
+    },
+    {
+      "key": "room_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "noauth"
+        },
+        "header": [],
+        "url": {
+          "raw": "{{world_url}}/health",
+          "host": [
+            "{{world_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "0. Auth (test tokens)",
+      "description": "Run first. Tokens are stored as collection variables and used by every other request.",
+      "item": [
+        {
+          "name": "Player token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('player_token', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"player\",\n  \"sub\": \"{{player_id}}\",\n  \"username\": \"undead_survivor\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{world_url}}/dev/tokens",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "dev",
+                "tokens"
+              ]
+            },
+            "description": "Stand-in for Player Service login (AUTH_DEV_TOKENS=true). Stores {{player_token}}."
+          }
+        },
+        {
+          "name": "Other player token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('other_player_token', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"player\",\n  \"sub\": \"someone-else\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{world_url}}/dev/tokens",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "dev",
+                "tokens"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Service token (as game-service)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('service_token', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"service\",\n  \"sub\": \"game-service\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{world_url}}/dev/tokens",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "dev",
+                "tokens"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Generate",
+      "item": [
+        {
+          "name": "Generate world (Game Service)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('lobby_id', 'lobby-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "const w = pm.response.json();",
+                  "pm.test('Block 1 open, 5 wings locked', () => { pm.expect(w.wings.filter(x => x.unlocked)).to.have.lengthOf(1); pm.expect(w.wings.filter(x => !x.unlocked)).to.have.lengthOf(5); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lobby_id\": \"{{lobby_id}}\",\n  \"university\": \"FAF\",\n  \"seed\": \"cab-survivors-2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{world_url}}/worlds",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds"
+              ]
+            },
+            "description": "A fresh lobby id is generated before every run."
+          }
+        },
+        {
+          "name": "Generate again → 409 WORLD_ALREADY_EXISTS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error code WORLD_ALREADY_EXISTS', () => pm.expect(pm.response.json().error.code).to.eql('WORLD_ALREADY_EXISTS'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lobby_id\": \"{{lobby_id}}\",\n  \"university\": \"FAF\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{world_url}}/worlds",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Map (player)",
+      "item": [
+        {
+          "name": "Full map",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('starts in FAF Cab', () => pm.expect(pm.response.json().home_room_id).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{world_url}}/worlds/{{lobby_id}}",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds",
+                "{{lobby_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Wings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{world_url}}/worlds/{{lobby_id}}/wings",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds",
+                "{{lobby_id}}",
+                "wings"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Laboratories",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const rooms = pm.response.json().items;",
+                  "pm.collectionVariables.set('room_id', rooms[0].room_id);",
+                  "pm.test('only laboratories', () => rooms.forEach(r => pm.expect(r.type).to.eql('laboratory')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{world_url}}/worlds/{{lobby_id}}/rooms?type=laboratory",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds",
+                "{{lobby_id}}",
+                "rooms"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "laboratory"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "One room",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('lab yields metal', () => pm.expect(pm.response.json().nodes.map(n => n.item_id)).to.include('metal-01'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{world_url}}/rooms/{{room_id}}",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Service reads and updates",
+      "item": [
+        {
+          "name": "Resource nodes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{world_url}}/worlds/{{lobby_id}}/nodes",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds",
+                "{{lobby_id}}",
+                "nodes"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Night spawns",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{world_url}}/worlds/{{lobby_id}}/spawns?phase=night",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds",
+                "{{lobby_id}}",
+                "spawns"
+              ],
+              "query": [
+                {
+                  "key": "phase",
+                  "value": "night"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark room safe",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('safe', () => pm.expect(pm.response.json().safe).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"safe\": true,\n  \"reason\": \"room_cleared\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{world_url}}/rooms/{{room_id}}",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "rooms",
+                "{{room_id}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Wing unlock",
+      "item": [
+        {
+          "name": "Unlock Engineering (math-101 passed)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('rooms added', () => pm.expect(pm.response.json().rooms_added.length).to.be.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"course_id\": \"math-101\",\n  \"player_id\": \"{{player_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{world_url}}/worlds/{{lobby_id}}/unlock",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds",
+                "{{lobby_id}}",
+                "unlock"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unlock again → already_unlocked",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('no-op', () => pm.expect(pm.response.json().already_unlocked).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"course_id\": \"math-101\",\n  \"player_id\": \"{{player_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{world_url}}/worlds/{{lobby_id}}/unlock",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds",
+                "{{lobby_id}}",
+                "unlock"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Course without a wing → 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('error code NO_WING_FOR_COURSE', () => pm.expect(pm.response.json().error.code).to.eql('NO_WING_FOR_COURSE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"course_id\": \"os-201\",\n  \"player_id\": \"{{player_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{world_url}}/worlds/{{lobby_id}}/unlock",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds",
+                "{{lobby_id}}",
+                "unlock"
+              ]
+            }
+          }
+        },
+        {
+          "name": "ExamPassed event → unlock Science",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 202', () => pm.response.to.have.status(202));",
+                  "pm.test('processed', () => pm.expect(pm.response.json().status).to.eql('processed'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"type\": \"ExamPassed\",\n  \"version\": 1,\n  \"occurred_at\": \"2026-09-24T10:00:00Z\",\n  \"producer\": \"exam-service\",\n  \"payload\": {\n    \"player_id\": \"{{player_id}}\",\n    \"course_id\": \"math-102\",\n    \"grade\": 9,\n    \"lobby_id\": \"{{lobby_id}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{world_url}}/events",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "events"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Science is open",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('science unlocked', () => pm.expect(pm.response.json().items.find(w => w.code === 'science').unlocked).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{world_url}}/worlds/{{lobby_id}}/wings",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds",
+                "{{lobby_id}}",
+                "wings"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Errors",
+      "item": [
+        {
+          "name": "No token → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error code UNAUTHENTICATED', () => pm.expect(pm.response.json().error.code).to.eql('UNAUTHENTICATED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": {
+              "raw": "{{world_url}}/worlds/{{lobby_id}}",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds",
+                "{{lobby_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Player token on a service endpoint → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error code FORBIDDEN', () => pm.expect(pm.response.json().error.code).to.eql('FORBIDDEN'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{world_url}}/worlds/{{lobby_id}}/nodes",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds",
+                "{{lobby_id}}",
+                "nodes"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unknown lobby → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error code WORLD_NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('WORLD_NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{world_url}}/worlds/no-such-lobby",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "worlds",
+                "no-such-lobby"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unknown room → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error code ROOM_NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('ROOM_NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{world_url}}/rooms/00000000-0000-4000-8000-000000000000",
+              "host": [
+                "{{world_url}}"
+              ],
+              "path": [
+                "rooms",
+                "00000000-0000-4000-8000-000000000000"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
