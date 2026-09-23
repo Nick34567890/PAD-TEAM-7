@@ -1,0 +1,8 @@
+# Real environment files hold secrets and are never committed; only .env.example files are.
+.env
+**/.env
+!**/.env.example
+node_modules/
+.DS_Store
+.idea/
+.vscode/
