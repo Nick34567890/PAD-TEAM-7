@@ -1,0 +1,94 @@
+# PAD TEAM 7 — team deployment.
+# Every service runs from its published DockerHub image: no Dockerfiles, no builds.
+# Each service owns a private PostgreSQL database, persisted in its own named volume.
+#
+#   cp .env.example .env    # fill in the secrets — .env is never committed
+#   docker compose up -d
+#
+# Services whose URL is left empty are mocked by their callers (the call is logged, not sent),
+# so any subset of the team's services can run on its own.
+name: pad-team-7
+
+x-postgres: &postgres
+  image: postgres:16-alpine
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+    interval: 5s
+    timeout: 3s
+    retries: 10
+
+x-auth: &auth
+  SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:?SERVICE_JWT_SECRET is not set in .env}
+  PLAYER_JWKS_URL: ${PLAYER_JWKS_URL:-}
+  PLAYER_JWT_ISSUER: player-service
+  MOCK_PLAYER_JWT_SECRET: ${MOCK_PLAYER_JWT_SECRET:?MOCK_PLAYER_JWT_SECRET is not set in .env}
+  AUTH_DEV_TOKENS: ${AUTH_DEV_TOKENS:-true}
+
+services:
+  # ---------------------------------------------------------------- Exam Service (Ilico Artemie)
+  exam-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${EXAM_DB_USER:-exam}
+      POSTGRES_PASSWORD: ${EXAM_DB_PASSWORD:?EXAM_DB_PASSWORD is not set in .env}
+      POSTGRES_DB: exam_db
+    volumes:
+      - exam_db_data:/var/lib/postgresql/data
+
+  exam-service:
+    image: artflow/exam-service:${EXAM_SERVICE_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+    environment:
+      <<: *auth
+      PORT: 8003
+      DB_HOST: exam-db
+      DB_PORT: 5432
+      DB_USER: ${EXAM_DB_USER:-exam}
+      DB_PASSWORD: ${EXAM_DB_PASSWORD}
+      DB_NAME: exam_db
+      WORLD_SERVICE_URL: http://world-service:8004
+      PLAYER_SERVICE_URL: ${PLAYER_SERVICE_URL:-}
+      CRAFTING_SERVICE_URL: ${CRAFTING_SERVICE_URL:-}
+    depends_on:
+      exam-db:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------- World Service (Ilico Artemie)
+  world-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${WORLD_DB_USER:-world}
+      POSTGRES_PASSWORD: ${WORLD_DB_PASSWORD:?WORLD_DB_PASSWORD is not set in .env}
+      POSTGRES_DB: world_db
+    volumes:
+      - world_db_data:/var/lib/postgresql/data
+
+  world-service:
+    image: artflow/world-service:${WORLD_SERVICE_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "8004:8004"
+    environment:
+      <<: *auth
+      PORT: 8004
+      DB_HOST: world-db
+      DB_PORT: 5432
+      DB_USER: ${WORLD_DB_USER:-world}
+      DB_PASSWORD: ${WORLD_DB_PASSWORD}
+      DB_NAME: world_db
+      RESOURCE_SERVICE_URL: ${RESOURCE_SERVICE_URL:-}
+      CRAFTING_SERVICE_URL: ${CRAFTING_SERVICE_URL:-}
+      GAME_SERVICE_URL: ${GAME_SERVICE_URL:-}
+    depends_on:
+      world-db:
+        condition: service_healthy
+
+  # Player, Game, Zombie, Resource, Base and Crafting join here, each as `<service>-db` +
+  # `<service>` from its DockerHub image, once their owners publish them.
+
+volumes:
+  exam_db_data:
+  world_db_data:
