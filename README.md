@@ -1533,7 +1533,7 @@ Envelope:
 | `LobbyFinished` | Game | World, Base, Zombie, Resource | `{ lobby_id }` | Release per-lobby state |
 | `CycleChanged` | Game | Zombie, World | `{ lobby_id, phase, day }` | Spawn or despawn; regenerate nodes |
 | `ActionCompleted` | Game | Resource | `{ action_id, player_id, pool_id, items }` | Apply the gathered resources |
-| `ExamPassed` | Exam | World, Player, Crafting | `{ player_id, course_id, grade }` | Unlock a wing; award XP; re-evaluate recipes |
+| `ExamPassed` | Exam | World, Player, Crafting | `{ player_id, course_id, grade, lobby_id }` | Unlock a wing in that lobby; re-evaluate recipes |
 | `AchievementUnlocked` | Exam | Player | `{ player_id, code, reward }` | Grant the reward and title |
 | `WingUnlocked` | World | Crafting, Game | `{ lobby_id, wing_code, rooms_added }` | Re-evaluate wing-gated recipes |
 | `ZombieKilled` | Zombie | Player, Game | `{ zombie_id, killer_player_id, loot, xp }` | Award loot and XP |
@@ -1546,6 +1546,23 @@ Envelope:
 **Transport for Lab 0–1** is direct HTTP `POST` to a consumer webhook, with retry and exponential
 backoff. **From Lab 2** these move onto a message broker; the envelope above is designed so that
 migration changes the transport and not a single payload.
+
+**The webhook.** Every consumer receives events on the same endpoint:
+
+**`POST /api/v1/events`** — deliver one event, in the envelope above.
+Headers: `Authorization: Bearer <service_jwt>` · `Idempotency-Key: <event_id>`
+
+`202 Accepted` — `{ "event_id": "evt-uuid-0091", "status": "processed" }`
+
+`status` is `processed` the first time, `duplicate` when the same `event_id` arrives again (nothing is
+applied twice), and `ignored` for an event type the service does not consume. A producer treats any
+`2xx` as delivered, retries `5xx`, `408`, `429` and network errors with backoff, and stops on any other
+`4xx`.
+
+**Lab 1 changes (Exam, World).** `ExamPassed` carries **`lobby_id`**, because World Service needs it
+to know whose map to expand. The field is additive, so existing consumers are unaffected. The **XP for a
+passed exam** is awarded once, through `POST /api/v1/players/{player_id}/xp`, so Player Service must
+not award XP again when it receives `ExamPassed`.
 
 ---
 
@@ -1760,6 +1777,7 @@ it until the next in-game day.
 | `GET` | `/api/v1/players/{player_id}/achievements` | player | Achievements earned |
 | `GET` | `/api/v1/players/{player_id}/diploma` | player | Diploma progress |
 | `GET` | `/api/v1/players/{player_id}/passed` | service | Passed course ids, for gating |
+| `POST` | `/api/v1/events` | service | Event webhook — consumes `PlayerRegistered` (see [Event catalogue](#event-catalogue)) |
 
 ---
 
@@ -2015,6 +2033,7 @@ configuration) · Crafting (wing-gated recipes).
 | `GET` | `/api/v1/worlds/{lobby_id}/spawns` | service | Spawn points for a phase |
 | `POST` | `/api/v1/worlds/{lobby_id}/unlock` | service | Unlock a wing on `ExamPassed` |
 | `PATCH` | `/api/v1/rooms/{room_id}` | service | Mark a room safe or contested |
+| `POST` | `/api/v1/events` | service | Event webhook — consumes `ExamPassed`, `LobbyCreated` (see [Event catalogue](#event-catalogue)) |
 
 ---
 
