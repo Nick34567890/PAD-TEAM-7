@@ -3022,6 +3022,8 @@ issue is closed by the PR; and the Project board card has moved to **Done** auto
 │   └── CODEOWNERS
 ├── docs/                              ← written architecture notes
 ├── png_arh/                           ← architecture diagrams used by this README
+├── deploy/                            ← team docker-compose (DockerHub images) + .env.example
+├── postman/                           ← one Postman collection per service
 ├── guide-private.md                   ← how to create and link the private repos
 ├── player-service/                    ← submodule (private)
 ├── game-service/                      ← submodule (private)
