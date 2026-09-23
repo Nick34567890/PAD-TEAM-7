@@ -40,8 +40,74 @@ the rest of this document is built to protect.
 
 ---
 
+## Running the system
+
+Every service is published on DockerHub as a **public image tagged with its version**. The team
+deployment in [`deploy/docker-compose.yml`](./deploy/docker-compose.yml) runs those images directly.
+It uses no Dockerfiles and builds nothing. Each service gets its own PostgreSQL 16 database, persisted
+in a named volume.
+
+### Requirements
+
+- Docker with Docker Compose v2 (Docker Desktop on Windows and macOS)
+- Free host ports `8003` and `8004`, plus one per service as more join the stack
+- Internet access on the first run, to pull the images
+
+### Published images
+
+| Service | Owner | Image | Version | Port | Postman collection |
+| --- | --- | --- | --- | --- | --- |
+| Exam Service | Ilico Artemie | [`artflow/exam-service`](https://hub.docker.com/r/artflow/exam-service) | `1.0.0` | `8003` | [`postman/exam-service.postman_collection.json`](./postman/exam-service.postman_collection.json) |
+| World Service | Ilico Artemie | [`artflow/world-service`](https://hub.docker.com/r/artflow/world-service) | `1.0.0` | `8004` | [`postman/world-service.postman_collection.json`](./postman/world-service.postman_collection.json) |
+
+Each owner adds a row here when their service is published, together with its block in
+`deploy/docker-compose.yml`.
+
+### Start
+
+```bash
+cd deploy
+cp .env.example .env     # replace every change_me — .env is git-ignored and never committed
+docker compose up -d
+docker compose ps        # every *-db is healthy and every service is Up
+```
+
+- Health: `GET http://localhost:8003/api/v1/health`, `GET http://localhost:8004/api/v1/health`
+- Swagger UI: `http://localhost:8003/docs`, `http://localhost:8004/docs`
+- Each service applies its database migrations on startup, so a fresh volume is usable at once.
+  Data survives `docker compose down`. Only `docker compose down -v` deletes it.
+- `SERVICE_JWT_SECRET` must be the **same for every service**, since they sign and verify each other's
+  service tokens with it.
+
+### Test
+
+Import a collection from [`postman/`](./postman) and run it top to bottom, either with the
+Collection Runner or from the command line:
+
+```bash
+npx newman run postman/exam-service.postman_collection.json
+npx newman run postman/world-service.postman_collection.json
+```
+
+Each collection starts by fetching test tokens from `POST /api/v1/dev/tokens`, then walks the main
+flow, the idempotency rules and the documented error codes.
+
+### Services not deployed yet
+
+A service whose URL is empty in `deploy/.env` is **mocked by its callers**: the request or event is
+logged as `[mock <service>]` with a contract-shaped response instead of being sent. So any subset of
+the team's services can run on its own, and connecting a real one means setting its URL. Until
+Player Service issues real tokens, player tokens are mocked too (see `PLAYER_JWKS_URL` and
+`AUTH_DEV_TOKENS` in `deploy/.env.example`).
+
+Inside the stack Exam Service already calls World Service. Passing an exam whose course unlocks a
+wing, such as `math-101` or `pad-201`, opens that wing in the player's lobby.
+
+---
+
 ## Table of contents
 
+- [Running the system](#running-the-system)
 - [Team and ownership](#team-and-ownership)
 - [Service boundaries](#service-boundaries)
 - [Technology choices and trade-offs](#technology-choices-and-trade-offs)
