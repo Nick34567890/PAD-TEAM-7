@@ -1,0 +1,1025 @@
+{
+  "info": {
+    "name": "PAD TEAM 7 — Exam Service",
+    "description": "Exam Service (port 8003) — see section 3 of the CPR README. Run the folders in order (Collection Runner works). Needs AUTH_DEV_TOKENS=true for the test tokens.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{player_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "exam_url",
+      "value": "http://localhost:8003/api/v1"
+    },
+    {
+      "key": "player_id",
+      "value": "player-postman"
+    },
+    {
+      "key": "lobby_id",
+      "value": "lobby-postman"
+    },
+    {
+      "key": "player_token",
+      "value": ""
+    },
+    {
+      "key": "other_player_token",
+      "value": ""
+    },
+    {
+      "key": "service_token",
+      "value": ""
+    },
+    {
+      "key": "exam_id",
+      "value": ""
+    },
+    {
+      "key": "question_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "noauth"
+        },
+        "header": [],
+        "url": {
+          "raw": "{{exam_url}}/health",
+          "host": [
+            "{{exam_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "0. Auth (test tokens)",
+      "description": "Run first. Tokens are stored as collection variables and used by every other request.",
+      "item": [
+        {
+          "name": "Player token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('player_token', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"player\",\n  \"sub\": \"{{player_id}}\",\n  \"username\": \"undead_survivor\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{exam_url}}/dev/tokens",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "dev",
+                "tokens"
+              ]
+            },
+            "description": "Stand-in for Player Service login (AUTH_DEV_TOKENS=true). Stores {{player_token}}."
+          }
+        },
+        {
+          "name": "Other player token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('other_player_token', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"player\",\n  \"sub\": \"someone-else\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{exam_url}}/dev/tokens",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "dev",
+                "tokens"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Service token (as game-service)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('service_token', pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"service\",\n  \"sub\": \"game-service\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{exam_url}}/dev/tokens",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "dev",
+                "tokens"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Courses",
+      "item": [
+        {
+          "name": "Course catalogue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('10 courses', () => pm.expect(pm.response.json().items).to.have.lengthOf(10));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/courses",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Math courses only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('only Math', () => pm.response.json().items.forEach(c => pm.expect(c.department).to.eql('Math')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/courses?department=Math",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "courses"
+              ],
+              "query": [
+                {
+                  "key": "department",
+                  "value": "Math"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Exam flow",
+      "item": [
+        {
+          "name": "Issue exam (Game Service)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh player every run, so the flow never hits EXAM_ALREADY_ACTIVE or a passed course.",
+                  "pm.collectionVariables.set('player_id', 'player-' + Date.now());",
+                  "pm.sendRequest({ url: pm.collectionVariables.get('exam_url') + '/dev/tokens', method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({ kind: 'player', sub: pm.collectionVariables.get('player_id') }) } },",
+                  "  (err, res) => pm.collectionVariables.set('player_token', res.json().access_token));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "const exam = pm.response.json();",
+                  "pm.collectionVariables.set('exam_id', exam.exam_id);",
+                  "pm.test('10 questions, 6 to pass', () => { pm.expect(exam.question_count).to.eql(10); pm.expect(exam.passing_score).to.eql(6); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"lobby_id\": \"{{lobby_id}}\",\n  \"encounter_id\": \"encounter-{{$guid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{exam_url}}/exams",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "exams"
+              ]
+            },
+            "description": "Idempotency-Key is a fresh {{$guid}}. Omit course_id to let the service pick one."
+          }
+        },
+        {
+          "name": "Issue a second exam → 409 EXAM_ALREADY_ACTIVE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error code EXAM_ALREADY_ACTIVE', () => pm.expect(pm.response.json().error.code).to.eql('EXAM_ALREADY_ACTIVE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"lobby_id\": \"{{lobby_id}}\",\n  \"encounter_id\": \"encounter-2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{exam_url}}/exams",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "exams"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get exam",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const exam = pm.response.json();",
+                  "pm.collectionVariables.set('question_id', exam.questions[0].question_id);",
+                  "pm.test('never leaks answers', () => pm.expect(pm.response.text()).not.to.include('correct_option'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/exams/{{exam_id}}",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "exams",
+                "{{exam_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Save an answer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('answered 1 of 10', () => pm.expect(pm.response.json().answered_count).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question_id\": \"{{question_id}}\",\n  \"option_index\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{exam_url}}/exams/{{exam_id}}/answers",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "exams",
+                "{{exam_id}}",
+                "answers"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Another player reads it → 403 NOT_YOUR_EXAM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error code NOT_YOUR_EXAM', () => pm.expect(pm.response.json().error.code).to.eql('NOT_YOUR_EXAM'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{other_player_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/exams/{{exam_id}}",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "exams",
+                "{{exam_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit and grade",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('graded', () => { pm.expect(r.grade).to.be.within(1, 10); pm.expect(r.passed).to.be.a('boolean'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{exam_url}}/exams/{{exam_id}}/submit",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "exams",
+                "{{exam_id}}",
+                "submit"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit again → 422 EXAM_ALREADY_SUBMITTED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('error code EXAM_ALREADY_SUBMITTED', () => pm.expect(pm.response.json().error.code).to.eql('EXAM_ALREADY_SUBMITTED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{exam_url}}/exams/{{exam_id}}/submit",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "exams",
+                "{{exam_id}}",
+                "submit"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Player progress",
+      "item": [
+        {
+          "name": "Exams",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/players/{{player_id}}/exams?limit=10",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "players",
+                "{{player_id}}",
+                "exams"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Course progress",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/players/{{player_id}}/courses",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "players",
+                "{{player_id}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Achievements",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/players/{{player_id}}/achievements",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "players",
+                "{{player_id}}",
+                "achievements"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Diploma",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('60 credits required', () => pm.expect(pm.response.json().credits_required).to.eql(60));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/players/{{player_id}}/diploma",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "players",
+                "{{player_id}}",
+                "diploma"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Passed courses (service)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/players/{{player_id}}/passed",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "players",
+                "{{player_id}}",
+                "passed"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Another player's diploma → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error code FORBIDDEN', () => pm.expect(pm.response.json().error.code).to.eql('FORBIDDEN'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{other_player_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/players/{{player_id}}/diploma",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "players",
+                "{{player_id}}",
+                "diploma"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Events",
+      "item": [
+        {
+          "name": "PlayerRegistered → enrol in every course",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 202', () => pm.response.to.have.status(202));",
+                  "pm.test('processed', () => pm.expect(pm.response.json().status).to.eql('processed'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"type\": \"PlayerRegistered\",\n  \"version\": 1,\n  \"occurred_at\": \"2026-09-24T10:00:00Z\",\n  \"producer\": \"player-service\",\n  \"payload\": {\n    \"player_id\": \"player-registered-{{$timestamp}}\",\n    \"username\": \"new_survivor\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{exam_url}}/events",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "events"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Errors",
+      "item": [
+        {
+          "name": "No token → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error code UNAUTHENTICATED', () => pm.expect(pm.response.json().error.code).to.eql('UNAUTHENTICATED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/courses",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Player token on a service endpoint → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error code FORBIDDEN', () => pm.expect(pm.response.json().error.code).to.eql('FORBIDDEN'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/players/{{player_id}}/passed",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "players",
+                "{{player_id}}",
+                "passed"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unknown exam → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error code EXAM_NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('EXAM_NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{exam_url}}/exams/00000000-0000-4000-8000-000000000000",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "exams",
+                "00000000-0000-4000-8000-000000000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Missing Idempotency-Key → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error code IDEMPOTENCY_KEY_REQUIRED', () => pm.expect(pm.response.json().error.code).to.eql('IDEMPOTENCY_KEY_REQUIRED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"player_id\": \"p\",\n  \"lobby_id\": \"l\",\n  \"encounter_id\": \"e\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{exam_url}}/exams",
+              "host": [
+                "{{exam_url}}"
+              ],
+              "path": [
+                "exams"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
