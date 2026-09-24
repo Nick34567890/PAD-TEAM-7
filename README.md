@@ -50,7 +50,7 @@ in a named volume.
 ### Requirements
 
 - Docker with Docker Compose v2 (Docker Desktop on Windows and macOS)
-- Free host ports `8001`, `8002`, `8003`, `8004`, `8007` and `8008`, plus one per service as more join the stack
+- Free host ports `8001` through `8008`
 - Internet access on the first run, to pull the images
 
 ### Published images
@@ -61,11 +61,21 @@ in a named volume.
 | Game Service | Islam Abu Koush | [`islamabukoush/game-service`](https://hub.docker.com/r/islamabukoush/game-service) | `1.0.0` | `8002` | [`postman/game-service.postman_collection.json`](./postman/game-service.postman_collection.json) |
 | Exam Service | Ilico Artemie | [`artflow/exam-service`](https://hub.docker.com/r/artflow/exam-service) | `1.0.0` | `8003` | [`postman/exam-service.postman_collection.json`](./postman/exam-service.postman_collection.json) |
 | World Service | Ilico Artemie | [`artflow/world-service`](https://hub.docker.com/r/artflow/world-service) | `1.0.0` | `8004` | [`postman/world-service.postman_collection.json`](./postman/world-service.postman_collection.json) |
+| Zombie Service | Roenco Maxim | `maxroenco/zombie-service` (local image) | `1.0.0` | `8005` | [`postman/zombie-service.postman_collection.json`](./postman/zombie-service.postman_collection.json) |
+| Resource Service | Roenco Maxim | `maxroenco/resource-service` (local image) | `1.0.0` | `8006` | [`postman/resource-service.postman_collection.json`](./postman/resource-service.postman_collection.json) |
 | Base Service | Gancear Nichita | [`nnick34567890/base-service`](https://hub.docker.com/r/nnick34567890/base-service) | `1.0.0` | `8007` | [`postman/base-service.postman_collection.json`](./postman/base-service.postman_collection.json) |
 | Crafting Service | Gancear Nichita | [`nnick34567890/crafting-service`](https://hub.docker.com/r/nnick34567890/crafting-service) | `1.0.0` | `8008` | [`postman/crafting-service.postman_collection.json`](./postman/crafting-service.postman_collection.json) |
 
 Each owner adds a row here when their service is published, together with its block in
 `deploy/docker-compose.yml`.
+
+Zombie and Resource are implemented locally but are not published. Build their private images before
+starting the team stack:
+
+```bash
+docker build -t maxroenco/zombie-service:1.0.0 ../zombie-service
+docker build -t maxroenco/resource-service:1.0.0 ../resource-service
+```
 
 ### Start
 
@@ -76,7 +86,7 @@ docker compose up -d
 docker compose ps        # every *-db is healthy and every service is Up
 ```
 
-- Health: `GET http://localhost:{8001,8002,8003,8004,8007,8008}/api/v1/health`
+- Health: `GET http://localhost:{8001,8002,8003,8004,8005,8006,8007,8008}/api/v1/health`
 - Swagger UI: `http://localhost:8003/docs`, `http://localhost:8004/docs`
 - Each service applies its database migrations on startup, so a fresh volume is usable at once.
   Data survives `docker compose down`. Only `docker compose down -v` deletes it.
@@ -114,12 +124,14 @@ npx newman run postman/player-service.postman_collection.json
 npx newman run postman/game-service.postman_collection.json
 npx newman run postman/exam-service.postman_collection.json
 npx newman run postman/world-service.postman_collection.json
+npx newman run postman/zombie-service.postman_collection.json
+npx newman run postman/resource-service.postman_collection.json
 ```
 
 The collections walk each service's main flow and assert the expected success statuses. Mutating
 cross-service requests generate a fresh `Idempotency-Key` automatically.
 
-### Services not deployed yet
+### Optional dependency mocks
 
 A service whose URL is empty in `deploy/.env` is **mocked by its callers**: the request or event is
 logged as `[mock <service>]` with a contract-shaped response instead of being sent. So any subset of

@@ -210,8 +210,58 @@ services:
       crafting-db:
         condition: service_healthy
 
-  # Zombie and Resource join here, each as `<service>-db` +
-  # `<service>` from its DockerHub image, once their owners publish them.
+  # --------------------------------------------------------------- Zombie Service (Roenco Maxim)
+  zombie-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${ZOMBIE_DB_USER:-zombie}
+      POSTGRES_PASSWORD: ${ZOMBIE_DB_PASSWORD:?ZOMBIE_DB_PASSWORD is not set in .env}
+      POSTGRES_DB: zombie_db
+    volumes:
+      - zombie_db_data:/var/lib/postgresql/data
+
+  zombie-service:
+    image: maxroenco/zombie-service:${ZOMBIE_SERVICE_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    environment:
+      <<: *auth
+      PORT: 8005
+      DATABASE_URL: postgres://${ZOMBIE_DB_USER:-zombie}:${ZOMBIE_DB_PASSWORD}@zombie-db:5432/zombie_db?sslmode=disable
+      PLAYER_JWKS_URL: http://player-service:8001/api/v1/auth/jwks
+      PLAYER_SERVICE_URL: http://player-service:8001
+      RESOURCE_SERVICE_URL: http://resource-service:8006
+    depends_on:
+      zombie-db:
+        condition: service_healthy
+      player-service:
+        condition: service_started
+      resource-service:
+        condition: service_started
+
+  # ------------------------------------------------------------- Resource Service (Roenco Maxim)
+  resource-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${RESOURCE_DB_USER:-resource}
+      POSTGRES_PASSWORD: ${RESOURCE_DB_PASSWORD:?RESOURCE_DB_PASSWORD is not set in .env}
+      POSTGRES_DB: resource_db
+    volumes:
+      - resource_db_data:/var/lib/postgresql/data
+
+  resource-service:
+    image: maxroenco/resource-service:${RESOURCE_SERVICE_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "8006:8006"
+    environment:
+      <<: *auth
+      PORT: 8006
+      DATABASE_URL: postgres://${RESOURCE_DB_USER:-resource}:${RESOURCE_DB_PASSWORD}@resource-db:5432/resource_db?sslmode=disable
+    depends_on:
+      resource-db:
+        condition: service_healthy
 
 volumes:
   player_db_data:
@@ -220,3 +270,5 @@ volumes:
   world_db_data:
   base_db_data:
   crafting_db_data:
+  zombie_db_data:
+  resource_db_data:
