@@ -1,0 +1,887 @@
+{
+ "info": {
+  "name": "PAD TEAM 7 \u2014 Crafting Service",
+  "_postman_id": "dc9767f7-0887-4b42-bbe6-582a6233a0b4",
+  "description": "Crafting Service (port 8008). Folder 0 mints tokens; the rest can run in order. With no downstream services configured, only recipe-barricade-kit and recipe-energy-booster are craftable \u2014 every other recipe has an unlock condition whose gatekeeper is mocked to the unmet answer.",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ },
+ "auth": {
+  "type": "bearer",
+  "bearer": [
+   {
+    "key": "token",
+    "value": "{{player_token}}",
+    "type": "string"
+   }
+  ]
+ },
+ "variable": [
+  {
+   "key": "crafting_url",
+   "value": "http://localhost:8008/api/v1"
+  },
+  {
+   "key": "player_id",
+   "value": "player-postman"
+  },
+  {
+   "key": "lobby_id",
+   "value": "lobby-postman"
+  },
+  {
+   "key": "base_id",
+   "value": "base-postman"
+  },
+  {
+   "key": "player_token",
+   "value": ""
+  },
+  {
+   "key": "service_token",
+   "value": ""
+  },
+  {
+   "key": "job_id",
+   "value": ""
+  },
+  {
+   "key": "replay_key",
+   "value": ""
+  }
+ ],
+ "item": [
+  {
+   "name": "Health",
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('status 200', () => pm.response.to.have.status(200));",
+       "pm.test('reports crafting-service', () => pm.expect(pm.response.json().service).to.eql('crafting-service'));"
+      ]
+     }
+    }
+   ],
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": {
+     "raw": "{{crafting_url}}/health",
+     "host": [
+      "{{crafting_url}}"
+     ],
+     "path": [
+      "health"
+     ]
+    },
+    "auth": {
+     "type": "noauth"
+    }
+   }
+  },
+  {
+   "name": "0. Auth (test tokens)",
+   "item": [
+    {
+     "name": "Issue player token",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.collectionVariables.set('player_token', pm.response.json().access_token);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{crafting_url}}/dev/tokens",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "dev",
+        "tokens"
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"player\",\n  \"sub\": \"{{player_id}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "Issue service token",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.collectionVariables.set('service_token', pm.response.json().access_token);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{crafting_url}}/dev/tokens",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "dev",
+        "tokens"
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"service\",\n  \"sub\": \"game-service\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "1. Recipe catalogue",
+   "item": [
+    {
+     "name": "All recipes",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('the six recipes from the contract', () => pm.expect(pm.response.json().items).to.have.lengthOf(6));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{crafting_url}}/recipes",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "recipes"
+       ]
+      }
+     }
+    },
+    {
+     "name": "Filter by category",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('defense holds the kit and the plate', () => {",
+         "  const ids = pm.response.json().items.map(r => r.recipe_id);",
+         "  pm.expect(ids).to.include('recipe-barricade-kit');",
+         "  pm.expect(ids).to.include('recipe-reinforced-plate');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{crafting_url}}/recipes?category=defense",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "recipes"
+       ],
+       "query": [
+        {
+         "key": "category",
+         "value": "defense"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "name": "Recipe detail",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('inputs match the contract', () => {",
+         "  pm.expect(pm.response.json().inputs).to.deep.include({ item_id: 'wood-01', count: 4 });",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{crafting_url}}/recipes/recipe-barricade-kit",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "recipes",
+        "recipe-barricade-kit"
+       ]
+      }
+     }
+    },
+    {
+     "name": "Unknown recipe (404)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 404', () => pm.response.to.have.status(404));",
+         "pm.test('RECIPE_NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('RECIPE_NOT_FOUND'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{crafting_url}}/recipes/recipe-nope",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "recipes",
+        "recipe-nope"
+       ]
+      }
+     }
+    },
+    {
+     "name": "Available per player",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "const items = pm.response.json().items;",
+         "pm.test('the unconditional recipe is unlocked', () =>",
+         "  pm.expect(items.find(r => r.recipe_id === 'recipe-barricade-kit').unlocked).to.be.true);",
+         "pm.test('the cheat sheet is locked, with a reason', () => {",
+         "  const sheet = items.find(r => r.recipe_id === 'recipe-cheat-sheet');",
+         "  pm.expect(sheet.unlocked).to.be.false;",
+         "  pm.expect(sheet.locked_reason).to.include('math-101');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{crafting_url}}/recipes/available?player_id={{player_id}}&lobby_id={{lobby_id}}&base_id={{base_id}}",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "recipes",
+        "available"
+       ],
+       "query": [
+        {
+         "key": "player_id",
+         "value": "{{player_id}}"
+        },
+        {
+         "key": "lobby_id",
+         "value": "{{lobby_id}}"
+        },
+        {
+         "key": "base_id",
+         "value": "{{base_id}}"
+        }
+       ]
+      },
+      "description": "Exam Service is mocked with no passed courses, so the cheat sheet reports its gate rather than opening."
+     }
+    }
+   ]
+  },
+  {
+   "name": "2. Preview",
+   "item": [
+    {
+     "name": "Preview a craftable recipe",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('unlocked, nothing consumed', () => pm.expect(pm.response.json().unlocked).to.be.true);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{crafting_url}}/recipes/recipe-barricade-kit/preview",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "recipes",
+        "recipe-barricade-kit",
+        "preview"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"lobby_id\": \"{{lobby_id}}\",\n  \"base_id\": \"{{base_id}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "A dry run: evaluates unlocks and materials without consuming anything."
+     }
+    },
+    {
+     "name": "Preview a locked recipe",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('reports locked instead of failing', () => {",
+         "  const body = pm.response.json();",
+         "  pm.expect(body.unlocked).to.be.false;",
+         "  pm.expect(body.craftable).to.be.false;",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{crafting_url}}/recipes/recipe-zombie-detector/preview",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "recipes",
+        "recipe-zombie-detector",
+        "preview"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"lobby_id\": \"{{lobby_id}}\",\n  \"base_id\": \"{{base_id}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "3. Crafting",
+   "item": [
+    {
+     "name": "Craft a Barricade Kit",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 201', () => pm.response.to.have.status(201));",
+         "const job = pm.response.json();",
+         "pm.collectionVariables.set('job_id', job.job_id);",
+         "pm.test('completed, with the output produced', () => {",
+         "  pm.expect(job.status).to.eql('completed');",
+         "  pm.expect(job.produced).to.deep.eql({ item_id: 'barricade-kit-01', count: 1 });",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{crafting_url}}/crafts",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "crafts"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"recipe_id\": \"recipe-barricade-kit\",\n  \"lobby_id\": \"{{lobby_id}}\",\n  \"base_id\": \"{{base_id}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "Craft job state",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('terminal state is completed', () => pm.expect(pm.response.json().status).to.eql('completed'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{crafting_url}}/crafts/{{job_id}}",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "crafts",
+        "{{job_id}}"
+       ]
+      }
+     }
+    },
+    {
+     "name": "Craft history",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('the craft we just ran is listed', () => {",
+         "  const ids = pm.response.json().items.map(j => j.job_id);",
+         "  pm.expect(ids).to.include(pm.collectionVariables.get('job_id'));",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{crafting_url}}/crafts?player_id={{player_id}}&limit=10",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "crafts"
+       ],
+       "query": [
+        {
+         "key": "player_id",
+         "value": "{{player_id}}"
+        },
+        {
+         "key": "limit",
+         "value": "10"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "name": "Locked recipe (403)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 403', () => pm.response.to.have.status(403));",
+         "pm.test('RECIPE_LOCKED names the condition', () => {",
+         "  const err = pm.response.json().error;",
+         "  pm.expect(err.code).to.eql('RECIPE_LOCKED');",
+         "  pm.expect(err.details.unlock_condition).to.be.an('object');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{crafting_url}}/crafts",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "crafts"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"recipe_id\": \"recipe-cheat-sheet\",\n  \"lobby_id\": \"{{lobby_id}}\",\n  \"base_id\": \"{{base_id}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "Unknown recipe (404)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 404', () => pm.response.to.have.status(404));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{crafting_url}}/crafts",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "crafts"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"recipe_id\": \"recipe-nope\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "4. Idempotency and errors",
+   "item": [
+    {
+     "name": "Replayed craft crafts nothing twice",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// One key, sent twice. The second call must return the first job, not a new one.",
+         "pm.collectionVariables.set('replay_key', pm.variables.replaceIn('{{$guid}}'));",
+         "pm.sendRequest({ url: pm.collectionVariables.get('crafting_url') + '/crafts', method: 'POST',",
+         "  header: { 'Content-Type': 'application/json', 'Idempotency-Key': pm.collectionVariables.get('replay_key'),",
+         "            'Authorization': 'Bearer ' + pm.collectionVariables.get('player_token') },",
+         "  body: { mode: 'raw', raw: JSON.stringify({ player_id: pm.collectionVariables.get('player_id'),",
+         "    recipe_id: 'recipe-energy-booster' }) } },",
+         "  (err, res) => pm.collectionVariables.set('first_job_id', res.json().job_id));"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200 \u2014 a replay, not a fresh 201', () => pm.response.to.have.status(200));",
+         "const body = pm.response.json();",
+         "pm.test('flagged as replayed', () => pm.expect(body.replayed).to.be.true);",
+         "pm.test('same job as the first call', () =>",
+         "  pm.expect(body.job_id).to.eql(pm.collectionVariables.get('first_job_id')));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{replay_key}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"recipe_id\": \"recipe-energy-booster\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "url": {
+       "raw": "{{crafting_url}}/crafts",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "crafts"
+       ]
+      }
+     }
+    },
+    {
+     "name": "Missing Idempotency-Key (400)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 400', () => pm.response.to.have.status(400));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{crafting_url}}/crafts",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "crafts"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"recipe_id\": \"recipe-barricade-kit\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "No token (401)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 401', () => pm.response.to.have.status(401));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{crafting_url}}/recipes",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "recipes"
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      }
+     }
+    },
+    {
+     "name": "Another player's history (403)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 403', () => pm.response.to.have.status(403));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{crafting_url}}/crafts?player_id=someone-else",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "crafts"
+       ],
+       "query": [
+        {
+         "key": "player_id",
+         "value": "someone-else"
+        }
+       ]
+      },
+      "description": "A player may only act on their own sub unless they hold moderator."
+     }
+    },
+    {
+     "name": "Unknown job (404)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 404', () => pm.response.to.have.status(404));",
+         "pm.test('CRAFT_JOB_NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('CRAFT_JOB_NOT_FOUND'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{crafting_url}}/crafts/00000000-0000-4000-8000-000000000000",
+       "host": [
+        "{{crafting_url}}"
+       ],
+       "path": [
+        "crafts",
+        "00000000-0000-4000-8000-000000000000"
+       ]
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

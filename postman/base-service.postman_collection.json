@@ -1,0 +1,1382 @@
+{
+ "info": {
+  "name": "PAD TEAM 7 \u2014 Base Service",
+  "_postman_id": "6f07537f-8eea-4d5c-83c3-04ba7ae5bd3e",
+  "description": "Base Service (port 8007). Run the folders in order: 0 mints tokens, 1 creates the base and stores base_id, and the rest depend on it. Every mutating request sends a fresh Idempotency-Key.",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ },
+ "auth": {
+  "type": "bearer",
+  "bearer": [
+   {
+    "key": "token",
+    "value": "{{player_token}}",
+    "type": "string"
+   }
+  ]
+ },
+ "variable": [
+  {
+   "key": "base_url",
+   "value": "http://localhost:8007/api/v1"
+  },
+  {
+   "key": "player_id",
+   "value": "player-postman"
+  },
+  {
+   "key": "lobby_id",
+   "value": "lobby-postman"
+  },
+  {
+   "key": "player_token",
+   "value": ""
+  },
+  {
+   "key": "service_token",
+   "value": ""
+  },
+  {
+   "key": "base_id",
+   "value": ""
+  },
+  {
+   "key": "barricade_id",
+   "value": ""
+  },
+  {
+   "key": "kiki_day",
+   "value": "1"
+  }
+ ],
+ "item": [
+  {
+   "name": "Health",
+   "event": [
+    {
+     "listen": "test",
+     "script": {
+      "type": "text/javascript",
+      "exec": [
+       "pm.test('status 200', () => pm.response.to.have.status(200));",
+       "pm.test('reports base-service', () => pm.expect(pm.response.json().service).to.eql('base-service'));"
+      ]
+     }
+    }
+   ],
+   "request": {
+    "method": "GET",
+    "header": [],
+    "url": {
+     "raw": "{{base_url}}/health",
+     "host": [
+      "{{base_url}}"
+     ],
+     "path": [
+      "health"
+     ]
+    },
+    "auth": {
+     "type": "noauth"
+    }
+   }
+  },
+  {
+   "name": "0. Auth (test tokens)",
+   "item": [
+    {
+     "name": "Issue player token",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.collectionVariables.set('player_token', pm.response.json().access_token);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/dev/tokens",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "dev",
+        "tokens"
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"player\",\n  \"sub\": \"{{player_id}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Player Service is not deployed yet, so Base Service mints the test token itself."
+     }
+    },
+    {
+     "name": "Issue service token",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.collectionVariables.set('service_token', pm.response.json().access_token);"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/dev/tokens",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "dev",
+        "tokens"
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"service\",\n  \"sub\": \"game-service\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "1. Base lifecycle",
+   "item": [
+    {
+     "name": "Create base (Game Service)",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// A fresh lobby every run, so the flow never hits BASE_ALREADY_EXISTS.",
+         "pm.collectionVariables.set('lobby_id', 'lobby-' + Date.now());"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 201', () => pm.response.to.have.status(201));",
+         "const base = pm.response.json();",
+         "pm.collectionVariables.set('base_id', base.base_id);",
+         "pm.test('starts at level 1', () => { pm.expect(base.level).to.eql(1); pm.expect(base.defense_rating).to.eql(10); });"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases"
+       ]
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{service_token}}",
+         "type": "string"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"lobby_id\": \"{{lobby_id}}\",\n  \"home_room_id\": \"faf-cab\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Service token only \u2014 a player token is rejected with 403."
+     }
+    },
+    {
+     "name": "Get base state",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('is the base we created', () => pm.expect(pm.response.json().base_id).to.eql(pm.collectionVariables.get('base_id')));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}"
+       ]
+      }
+     }
+    },
+    {
+     "name": "Find base by lobby",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/bases?lobby_id={{lobby_id}}",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases"
+       ],
+       "query": [
+        {
+         "key": "lobby_id",
+         "value": "{{lobby_id}}"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "name": "Blueprints",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('quotes the level 2 cost from the contract', () => {",
+         "  const cost = pm.response.json().upgrade_cost;",
+         "  pm.expect(cost).to.deep.include({ item_id: 'wood-01', count: 10 });",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/blueprints",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "blueprints"
+       ]
+      }
+     }
+    },
+    {
+     "name": "Upgrade to level 2",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "const body = pm.response.json();",
+         "pm.test('level and defense rise together', () => { pm.expect(body.level).to.eql(2); pm.expect(body.defense_rating).to.eql(22); });"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/upgrade",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "upgrade"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "2. Facilities",
+   "item": [
+    {
+     "name": "Build workbench",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('built at level 1', () => pm.expect(pm.response.json().level).to.eql(1));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/facilities",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "facilities"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"type\": \"workbench\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "Upgrade workbench",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('same facility, now level 2', () => pm.expect(pm.response.json().level).to.eql(2));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/facilities",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "facilities"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"type\": \"workbench\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Build if absent, upgrade if present \u2014 the same call either way."
+     }
+    },
+    {
+     "name": "List facilities",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/facilities",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "facilities"
+       ]
+      }
+     }
+    },
+    {
+     "name": "Infirmary is locked (403)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 403', () => pm.response.to.have.status(403));",
+         "pm.test('names the unlock condition', () => pm.expect(pm.response.json().error.code).to.eql('FACILITY_LOCKED'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/facilities",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "facilities"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"type\": \"infirmary\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Exam Service is mocked with no passed courses, so bio-101 is unmet and the gate holds."
+     }
+    }
+   ]
+  },
+  {
+   "name": "3. Barricades",
+   "item": [
+    {
+     "name": "Build a wood barricade",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 201', () => pm.response.to.have.status(201));",
+         "const b = pm.response.json();",
+         "pm.collectionVariables.set('barricade_id', b.barricade_id);",
+         "pm.test('wood has strength 30', () => { pm.expect(b.strength).to.eql(30); pm.expect(b.health).to.eql(30); });"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/barricades",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "barricades"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"room_id\": \"lab-204\",\n  \"material\": \"wood\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "Same room again (409)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 409', () => pm.response.to.have.status(409));",
+         "pm.test('ROOM_ALREADY_BARRICADED', () => pm.expect(pm.response.json().error.code).to.eql('ROOM_ALREADY_BARRICADED'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/barricades",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "barricades"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"room_id\": \"lab-204\",\n  \"material\": \"wood\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "Reinforced needs level 3 (403)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 403', () => pm.response.to.have.status(403));",
+         "pm.test('MATERIAL_REQUIRES_HIGHER_LEVEL', () => pm.expect(pm.response.json().error.code).to.eql('MATERIAL_REQUIRES_HIGHER_LEVEL'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/barricades",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "barricades"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"room_id\": \"lab-999\",\n  \"material\": \"reinforced\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "The base is level 2 after folder 1, and reinforced requires 3."
+     }
+    },
+    {
+     "name": "List barricades",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/barricades",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "barricades"
+       ]
+      }
+     }
+    },
+    {
+     "name": "Damage it (Game Service)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('health drops by the amount', () => pm.expect(pm.response.json().health).to.eql(18));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "PATCH",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/barricades/{{barricade_id}}",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "barricades",
+        "{{barricade_id}}"
+       ]
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{service_token}}",
+         "type": "string"
+        }
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"operation\": \"damage\",\n  \"amount\": 12,\n  \"zombie_id\": \"zombie-1\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Damage requires a service token \u2014 a player cannot damage their own barricade."
+     }
+    },
+    {
+     "name": "Repair it",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('back to full strength', () => pm.expect(pm.response.json().health).to.eql(30));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "PATCH",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/barricades/{{barricade_id}}",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "barricades",
+        "{{barricade_id}}"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"operation\": \"repair\",\n  \"player_id\": \"{{player_id}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "Repair at full health (422)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 422', () => pm.response.to.have.status(422));",
+         "pm.test('ALREADY_FULL_HEALTH', () => pm.expect(pm.response.json().error.code).to.eql('ALREADY_FULL_HEALTH'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "PATCH",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/barricades/{{barricade_id}}",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "barricades",
+        "{{barricade_id}}"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"operation\": \"repair\",\n  \"player_id\": \"{{player_id}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "4. Storage, decorations and Kiki",
+   "item": [
+    {
+     "name": "Unlock storage",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "const s = pm.response.json();",
+         "pm.test('capacity grows by one tier', () => pm.expect(s.storage_capacity - s.previous_capacity).to.eql(50));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/storage",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "storage"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "Place a decoration",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 201', () => pm.response.to.have.status(201));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/decorations",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "decorations"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"slot\": \"wall_north\",\n  \"item_id\": \"poster-faf-01\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "Same slot twice (409)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 409', () => pm.response.to.have.status(409));",
+         "pm.test('SLOT_OCCUPIED', () => pm.expect(pm.response.json().error.code).to.eql('SLOT_OCCUPIED'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/decorations",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "decorations"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"slot\": \"wall_north\",\n  \"item_id\": \"poster-faf-02\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "Feed Kiki",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "const k = pm.response.json();",
+         "pm.test('returns a reward and the next day', () => { pm.expect(k.reward).to.be.an('object'); pm.expect(k.next_available_day).to.eql(2); });"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/kiki",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "kiki"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"day\": 1,\n  \"offering\": {\n    \"item_id\": \"food-01\",\n    \"count\": 2\n  }\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "Feed Kiki again the same day (429)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 429', () => pm.response.to.have.status(429));",
+         "pm.test('KIKI_ALREADY_FED', () => pm.expect(pm.response.json().error.code).to.eql('KIKI_ALREADY_FED'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/kiki",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "kiki"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\",\n  \"day\": 1,\n  \"offering\": {\n    \"item_id\": \"food-01\",\n    \"count\": 2\n  }\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "A fresh Idempotency-Key, so this is a genuine second attempt rather than a replay \u2014 the once-per-day rule is what rejects it."
+     }
+    }
+   ]
+  },
+  {
+   "name": "5. Idempotency and errors",
+   "item": [
+    {
+     "name": "Replayed upgrade returns the stored result",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// One key, sent twice: the second call must not upgrade again.",
+         "pm.collectionVariables.set('replay_key', pm.variables.replaceIn('{{$guid}}'));",
+         "pm.sendRequest({ url: pm.collectionVariables.get('base_url') + '/bases/' + pm.collectionVariables.get('base_id') + '/upgrade',",
+         "  method: 'POST',",
+         "  header: { 'Content-Type': 'application/json', 'Idempotency-Key': pm.collectionVariables.get('replay_key'),",
+         "            'Authorization': 'Bearer ' + pm.collectionVariables.get('player_token') },",
+         "  body: { mode: 'raw', raw: JSON.stringify({ player_id: pm.collectionVariables.get('player_id') }) } },",
+         "  (err, res) => pm.collectionVariables.set('first_level', res.json().level));"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 200', () => pm.response.to.have.status(200));",
+         "pm.test('identical level to the first call \u2014 nothing upgraded twice', () =>",
+         "  pm.expect(pm.response.json().level).to.eql(Number(pm.collectionVariables.get('first_level'))));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{replay_key}}"
+       }
+      ],
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/upgrade",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "upgrade"
+       ]
+      }
+     }
+    },
+    {
+     "name": "Missing Idempotency-Key (400)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 400', () => pm.response.to.have.status(400));",
+         "pm.test('VALIDATION_FAILED', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_FAILED'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}/upgrade",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}",
+        "upgrade"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"player_id\": \"{{player_id}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "No token (401)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 401', () => pm.response.to.have.status(401));",
+         "pm.test('UNAUTHENTICATED', () => pm.expect(pm.response.json().error.code).to.eql('UNAUTHENTICATED'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/bases/{{base_id}}",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "{{base_id}}"
+       ]
+      },
+      "auth": {
+       "type": "noauth"
+      }
+     }
+    },
+    {
+     "name": "Unknown base (404)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 404', () => pm.response.to.have.status(404));",
+         "pm.test('BASE_NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('BASE_NOT_FOUND'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/bases/00000000-0000-4000-8000-000000000000",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases",
+        "00000000-0000-4000-8000-000000000000"
+       ]
+      }
+     }
+    },
+    {
+     "name": "Player token on a service endpoint (403)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('status 403', () => pm.response.to.have.status(403));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Idempotency-Key",
+        "value": "{{$guid}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/bases",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "bases"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"lobby_id\": \"lobby-denied\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "POST /bases is service-only; the collection's default player token must be rejected."
+     }
+    }
+   ]
+  }
+ ]
+}
