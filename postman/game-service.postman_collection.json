@@ -1,0 +1,23 @@
+{
+  "info": {"name":"PAD Team 7 - Game Service","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable": [
+    {"key":"baseUrl","value":"http://localhost:8002"},
+    {"key":"playerId","value":"11111111-1111-4111-8111-111111111111"},
+    {"key":"playerToken","value":""},
+    {"key":"serviceToken","value":""},
+    {"key":"lobbyId","value":""},
+    {"key":"actionId","value":""}
+  ],
+  "item": [
+    {"name":"Health","request":{"method":"GET","url":"{{baseUrl}}/api/v1/health"},"event":[{"listen":"test","script":{"exec":["pm.test('healthy', () => pm.response.to.have.status(200));"]}}]},
+    {"name":"Get Player Dev Token","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"player_id\":\"{{playerId}}\",\"role\":\"player\"}"},"url":"{{baseUrl}}/api/v1/dev/tokens"},"event":[{"listen":"test","script":{"exec":["pm.test('token issued', () => pm.response.to.have.status(200));","pm.collectionVariables.set('playerToken',pm.response.json().access_token);"]}}]},
+    {"name":"Get Service Dev Token","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"player_id\":\"postman\",\"role\":\"service\"}"},"url":"{{baseUrl}}/api/v1/dev/tokens"},"event":[{"listen":"test","script":{"exec":["pm.collectionVariables.set('serviceToken',pm.response.json().access_token);"]}}]},
+    {"name":"Create Lobby","request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{playerToken}}"},{"key":"Idempotency-Key","value":"{{$randomUUID}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"name\":\"Postman Survivors\",\"university\":\"FAF\",\"max_players\":8}"},"url":"{{baseUrl}}/api/v1/lobbies"},"event":[{"listen":"test","script":{"exec":["pm.test('lobby created', () => pm.response.to.have.status(201));","pm.collectionVariables.set('lobbyId',pm.response.json().lobby_id);"]}}]},
+    {"name":"List Lobbies","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{playerToken}}"}],"url":"{{baseUrl}}/api/v1/lobbies?university=FAF"}},
+    {"name":"Start Action","request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{playerToken}}"},{"key":"Idempotency-Key","value":"{{$randomUUID}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"action_type\":\"chop_bench\",\"target_room_id\":\"room-a1\",\"target_node_id\":\"node-bench-3\"}"},"url":"{{baseUrl}}/api/v1/lobbies/{{lobbyId}}/actions"},"event":[{"listen":"test","script":{"exec":["pm.test('action accepted', () => pm.response.to.have.status(202));","pm.collectionVariables.set('actionId',pm.response.json().action_id);"]}}]},
+    {"name":"Poll Action","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{playerToken}}"}],"url":"{{baseUrl}}/api/v1/actions/{{actionId}}"}},
+    {"name":"Advance Cycle","request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{serviceToken}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{}"},"url":"{{baseUrl}}/api/v1/lobbies/{{lobbyId}}/cycle"},"event":[{"listen":"test","script":{"exec":["pm.test('cycle advanced', () => pm.response.to.have.status(200));"]}}]},
+    {"name":"Professor Encounter","request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{serviceToken}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"player_id\":\"{{playerId}}\",\"zombie_id\":\"professor-1\",\"zombie_type\":\"professor_zombie\"}"},"url":"{{baseUrl}}/api/v1/lobbies/{{lobbyId}}/encounters"}}
+  ]
+}
+
