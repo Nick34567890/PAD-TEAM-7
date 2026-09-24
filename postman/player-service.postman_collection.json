@@ -1,0 +1,25 @@
+{
+  "info": {"name":"PAD Team 7 - Player Service","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable": [
+    {"key":"baseUrl","value":"http://localhost:8001"},
+    {"key":"email","value":"postman-{{$randomUUID}}@faf.test"},
+    {"key":"username","value":"user_{{$randomInt}}"},
+    {"key":"password","value":"correct-horse-battery"},
+    {"key":"playerId","value":""},
+    {"key":"accessToken","value":""},
+    {"key":"refreshToken","value":""},
+    {"key":"serviceToken","value":""}
+  ],
+  "item": [
+    {"name":"Health","request":{"method":"GET","url":"{{baseUrl}}/api/v1/health"},"event":[{"listen":"test","script":{"exec":["pm.test('healthy', () => pm.response.to.have.status(200));"]}}]},
+    {"name":"Register","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"username\":\"{{username}}\",\"email\":\"{{email}}\",\"password\":\"{{password}}\"}"},"url":"{{baseUrl}}/api/v1/players/register"},"event":[{"listen":"test","script":{"exec":["pm.test('created', () => pm.response.to.have.status(201));","const b=pm.response.json(); pm.collectionVariables.set('playerId',b.player_id); pm.collectionVariables.set('email',b.email); pm.collectionVariables.set('username',b.username);"]}}]},
+    {"name":"Login","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"email\":\"{{email}}\",\"password\":\"{{password}}\"}"},"url":"{{baseUrl}}/api/v1/players/login"},"event":[{"listen":"test","script":{"exec":["pm.test('authenticated', () => pm.response.to.have.status(200));","const b=pm.response.json(); pm.collectionVariables.set('accessToken',b.access_token); pm.collectionVariables.set('refreshToken',b.refresh_token);"]}}]},
+    {"name":"Get Service Dev Token","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"subject\":\"postman\"}"},"url":"{{baseUrl}}/api/v1/dev/tokens"},"event":[{"listen":"test","script":{"exec":["pm.test('service token issued', () => pm.response.to.have.status(200));","pm.collectionVariables.set('serviceToken',pm.response.json().access_token);"]}}]},
+    {"name":"Profile","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{accessToken}}"}],"url":"{{baseUrl}}/api/v1/players/{{playerId}}"},"event":[{"listen":"test","script":{"exec":["pm.test('profile returned', () => pm.response.to.have.status(200));"]}}]},
+    {"name":"Update Presence","request":{"method":"PUT","header":[{"key":"Authorization","value":"Bearer {{accessToken}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"status\":\"online\"}"},"url":"{{baseUrl}}/api/v1/players/{{playerId}}/presence"},"event":[{"listen":"test","script":{"exec":["pm.test('presence stored', () => pm.response.to.have.status(200));"]}}]},
+    {"name":"Award XP","request":{"method":"POST","header":[{"key":"Authorization","value":"Bearer {{serviceToken}}"},{"key":"Idempotency-Key","value":"{{$randomUUID}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"amount\":50,\"reason\":\"postman_test\",\"source\":\"test\"}"},"url":"{{baseUrl}}/api/v1/players/{{playerId}}/xp"}},
+    {"name":"Add Inventory","request":{"method":"PATCH","header":[{"key":"Authorization","value":"Bearer {{serviceToken}}"},{"key":"Idempotency-Key","value":"{{$randomUUID}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"operation\":\"add\",\"items\":[{\"item_id\":\"coffee-01\",\"count\":2}],\"reason\":\"postman_test\",\"source\":\"test\"}"},"url":"{{baseUrl}}/api/v1/players/{{playerId}}/inventory"}},
+    {"name":"Get Inventory","request":{"method":"GET","header":[{"key":"Authorization","value":"Bearer {{accessToken}}"}],"url":"{{baseUrl}}/api/v1/players/{{playerId}}/inventory"},"event":[{"listen":"test","script":{"exec":["pm.test('inventory returned', () => pm.response.to.have.status(200));"]}}]},
+    {"name":"Refresh","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"refresh_token\":\"{{refreshToken}}\"}"},"url":"{{baseUrl}}/api/v1/players/refresh"},"event":[{"listen":"test","script":{"exec":["pm.test('refresh rotated', () => pm.response.to.have.status(200));"]}}]}
+  ]
+}
