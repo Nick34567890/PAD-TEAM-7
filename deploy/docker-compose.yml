@@ -98,7 +98,7 @@ services:
       - ./db/base_db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
 
   base-service:
-    image: nick34567890/base-service:${BASE_SERVICE_VERSION:-1.0.0}
+    image: nnick34567890/base-service:${BASE_SERVICE_VERSION:-1.0.0}
     restart: unless-stopped
     ports:
       - "8007:8007"
@@ -130,7 +130,7 @@ services:
       - ./db/crafting_db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
 
   crafting-service:
-    image: nick34567890/crafting-service:${CRAFTING_SERVICE_VERSION:-1.0.0}
+    image: nnick34567890/crafting-service:${CRAFTING_SERVICE_VERSION:-1.0.0}
     restart: unless-stopped
     ports:
       - "8008:8008"
