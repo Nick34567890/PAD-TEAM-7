@@ -1695,6 +1695,13 @@ Every non-2xx response uses one shape, so clients and services parse errors iden
 | `500` | Unexpected failure | `INTERNAL_ERROR` |
 | `503` | A required downstream service is unreachable | `DEPENDENCY_UNAVAILABLE` |
 
+### Health and readiness
+
+Every service exposes two probes. `GET /api/v1/health` is **liveness**: the process is up, and it
+deliberately does not touch the database, so a database blip never gets a healthy service restarted.
+`GET /api/v1/ready` is **readiness**: it queries the database and answers `503
+DEPENDENCY_UNAVAILABLE` when that fails. Container health checks poll `/ready`.
+
 ### Common headers
 
 | Header | Direction | Purpose |
@@ -2309,6 +2316,8 @@ requires base level ≥ 3).
 | `POST` | `/api/v1/bases/{base_id}/storage` | player | Unlock storage capacity |
 | `POST` | `/api/v1/bases/{base_id}/decorations` | player | Decorate the homeroom |
 | `POST` | `/api/v1/bases/{base_id}/kiki` | player | Interact with Kiki |
+| `POST` | `/api/v1/events` | service | Consume `LobbyCreated` and `LobbyFinished` |
+| `GET` | `/api/v1/ready` | — | Readiness: the service *and* its database answer |
 
 ---
 
@@ -2696,6 +2705,8 @@ Because every step is keyed off one idempotency key, the saga is replayable from
 | `POST` | `/api/v1/crafts` | player | Craft, atomically and exactly once |
 | `GET` | `/api/v1/crafts/{job_id}` | player | Terminal state of a craft |
 | `GET` | `/api/v1/crafts` | player | Craft history |
+| `POST` | `/api/v1/events` | service | Consume `PlayerLeveledUp`, `ExamPassed`, `WingUnlocked` |
+| `GET` | `/api/v1/ready` | — | Readiness: the service *and* its database answer |
 
 ---
 
