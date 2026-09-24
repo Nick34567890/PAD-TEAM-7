@@ -26,6 +26,65 @@ x-auth: &auth
   AUTH_DEV_TOKENS: ${AUTH_DEV_TOKENS:-true}
 
 services:
+  # --------------------------------------------------------------- Player Service (Islam Abu Koush)
+  player-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${PLAYER_DB_USER:-player}
+      POSTGRES_PASSWORD: ${PLAYER_DB_PASSWORD:?PLAYER_DB_PASSWORD is not set in .env}
+      POSTGRES_DB: player_db
+    volumes:
+      - player_db_data:/var/lib/postgresql/data
+      - ./db/player_db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+
+  player-service:
+    image: geografix/player-service:${PLAYER_SERVICE_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      PORT: 8001
+      DATABASE_URL: postgres://${PLAYER_DB_USER:-player}:${PLAYER_DB_PASSWORD}@player-db:5432/player_db?sslmode=disable
+      SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET}
+      AUTH_DEV_TOKENS: ${AUTH_DEV_TOKENS:-true}
+    depends_on:
+      player-db:
+        condition: service_healthy
+
+  # ----------------------------------------------------------------- Game Service (Islam Abu Koush)
+  game-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${GAME_DB_USER:-game}
+      POSTGRES_PASSWORD: ${GAME_DB_PASSWORD:?GAME_DB_PASSWORD is not set in .env}
+      POSTGRES_DB: game_db
+    volumes:
+      - game_db_data:/var/lib/postgresql/data
+      - ./db/game_db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+
+  game-service:
+    image: geografix/game-service:${GAME_SERVICE_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    environment:
+      <<: *auth
+      PORT: 8002
+      DATABASE_URL: postgres://${GAME_DB_USER:-game}:${GAME_DB_PASSWORD}@game-db:5432/game_db?sslmode=disable
+      PLAYER_JWKS_URL: http://player-service:8001/api/v1/auth/jwks
+      PLAYER_SERVICE_URL: http://player-service:8001
+      WORLD_SERVICE_URL: ${WORLD_SERVICE_URL:-}
+      BASE_SERVICE_URL: ${BASE_SERVICE_URL:-}
+      RESOURCE_SERVICE_URL: ${RESOURCE_SERVICE_URL:-}
+      EXAM_SERVICE_URL: ${EXAM_SERVICE_URL:-}
+      ZOMBIE_SERVICE_URL: ${ZOMBIE_SERVICE_URL:-}
+      ACTION_TIME_SCALE: ${ACTION_TIME_SCALE:-0.01}
+    depends_on:
+      game-db:
+        condition: service_healthy
+      player-service:
+        condition: service_started
+
   # ---------------------------------------------------------------- Exam Service (Ilico Artemie)
   exam-db:
     <<: *postgres
@@ -151,11 +210,65 @@ services:
       crafting-db:
         condition: service_healthy
 
-  # Player, Game, Zombie and Resource join here, each as `<service>-db` +
-  # `<service>` from its DockerHub image, once their owners publish them.
+  # --------------------------------------------------------------- Zombie Service (Roenco Maxim)
+  zombie-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${ZOMBIE_DB_USER:-zombie}
+      POSTGRES_PASSWORD: ${ZOMBIE_DB_PASSWORD:?ZOMBIE_DB_PASSWORD is not set in .env}
+      POSTGRES_DB: zombie_db
+    volumes:
+      - zombie_db_data:/var/lib/postgresql/data
+
+  zombie-service:
+    image: geografix/zombie-service:${ZOMBIE_SERVICE_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    environment:
+      <<: *auth
+      PORT: 8005
+      DATABASE_URL: postgres://${ZOMBIE_DB_USER:-zombie}:${ZOMBIE_DB_PASSWORD}@zombie-db:5432/zombie_db?sslmode=disable
+      PLAYER_JWKS_URL: http://player-service:8001/api/v1/auth/jwks
+      PLAYER_SERVICE_URL: http://player-service:8001
+      RESOURCE_SERVICE_URL: http://resource-service:8006
+    depends_on:
+      zombie-db:
+        condition: service_healthy
+      player-service:
+        condition: service_started
+      resource-service:
+        condition: service_started
+
+  # ------------------------------------------------------------- Resource Service (Roenco Maxim)
+  resource-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${RESOURCE_DB_USER:-resource}
+      POSTGRES_PASSWORD: ${RESOURCE_DB_PASSWORD:?RESOURCE_DB_PASSWORD is not set in .env}
+      POSTGRES_DB: resource_db
+    volumes:
+      - resource_db_data:/var/lib/postgresql/data
+
+  resource-service:
+    image: geografix/resource-service:${RESOURCE_SERVICE_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "8006:8006"
+    environment:
+      <<: *auth
+      PORT: 8006
+      DATABASE_URL: postgres://${RESOURCE_DB_USER:-resource}:${RESOURCE_DB_PASSWORD}@resource-db:5432/resource_db?sslmode=disable
+    depends_on:
+      resource-db:
+        condition: service_healthy
 
 volumes:
+  player_db_data:
+  game_db_data:
   exam_db_data:
   world_db_data:
   base_db_data:
   crafting_db_data:
+  zombie_db_data:
+  resource_db_data:

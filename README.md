@@ -50,15 +50,19 @@ in a named volume.
 ### Requirements
 
 - Docker with Docker Compose v2 (Docker Desktop on Windows and macOS)
-- Free host ports `8003`, `8004`, `8007` and `8008`, plus one per service as more join the stack
+- Free host ports `8001` through `8008`
 - Internet access on the first run, to pull the images
 
 ### Published images
 
 | Service | Owner | Image | Version | Port | Postman collection |
 | --- | --- | --- | --- | --- | --- |
+| Player Service | Islam Abu Koush | [`geografix/player-service`](https://hub.docker.com/r/geografix/player-service) | `1.0.0` | `8001` | [`postman/player-service.postman_collection.json`](./postman/player-service.postman_collection.json) |
+| Game Service | Islam Abu Koush | [`geografix/game-service`](https://hub.docker.com/r/geografix/game-service) | `1.0.0` | `8002` | [`postman/game-service.postman_collection.json`](./postman/game-service.postman_collection.json) |
 | Exam Service | Ilico Artemie | [`artflow/exam-service`](https://hub.docker.com/r/artflow/exam-service) | `1.0.0` | `8003` | [`postman/exam-service.postman_collection.json`](./postman/exam-service.postman_collection.json) |
 | World Service | Ilico Artemie | [`artflow/world-service`](https://hub.docker.com/r/artflow/world-service) | `1.0.0` | `8004` | [`postman/world-service.postman_collection.json`](./postman/world-service.postman_collection.json) |
+| Zombie Service | Roenco Maxim | [`geografix/zombie-service`](https://hub.docker.com/r/geografix/zombie-service) | `1.0.0` | `8005` | [`postman/zombie-service.postman_collection.json`](./postman/zombie-service.postman_collection.json) |
+| Resource Service | Roenco Maxim | [`geografix/resource-service`](https://hub.docker.com/r/geografix/resource-service) | `1.0.0` | `8006` | [`postman/resource-service.postman_collection.json`](./postman/resource-service.postman_collection.json) |
 | Base Service | Gancear Nichita | [`nnick34567890/base-service`](https://hub.docker.com/r/nnick34567890/base-service) | `1.0.0` | `8007` | [`postman/base-service.postman_collection.json`](./postman/base-service.postman_collection.json) |
 | Crafting Service | Gancear Nichita | [`nnick34567890/crafting-service`](https://hub.docker.com/r/nnick34567890/crafting-service) | `1.0.0` | `8008` | [`postman/crafting-service.postman_collection.json`](./postman/crafting-service.postman_collection.json) |
 
@@ -74,7 +78,7 @@ docker compose up -d
 docker compose ps        # every *-db is healthy and every service is Up
 ```
 
-- Health: `GET http://localhost:{8003,8004,8007,8008}/api/v1/health`
+- Health: `GET http://localhost:{8001,8002,8003,8004,8005,8006,8007,8008}/api/v1/health`
 - Swagger UI: `http://localhost:8003/docs`, `http://localhost:8004/docs`
 - Each service applies its database migrations on startup, so a fresh volume is usable at once.
   Data survives `docker compose down`. Only `docker compose down -v` deletes it.
@@ -90,10 +94,10 @@ also applies its own schema at boot, so an existing database is left alone eithe
 
 ### Testing a service
 
-Each service ships a Postman collection in [`postman/`](./postman/). Import one, and run the folders
-in order — the first mints the tokens the rest depend on. `POST /api/v1/dev/tokens` exists because
-Player Service is not deployed yet: while `PLAYER_JWKS_URL` is empty each service mints its own test
-tokens, and the moment the real issuer arrives that endpoint is switched off with `AUTH_DEV_TOKENS`.
+Each service ships a Postman collection in [`postman/`](./postman/). Import one and run its requests
+in order. Player Service registers and authenticates a fresh account. Game Service can mint Lab 1
+test tokens through `POST /api/v1/dev/tokens`; setting `AUTH_DEV_TOKENS=false` disables that route
+when every client uses Player Service's RS256 tokens.
 
 ### Running only part of the team's stack
 
@@ -108,20 +112,24 @@ Import a collection from [`postman/`](./postman) and run it top to bottom, eithe
 Collection Runner or from the command line:
 
 ```bash
+npx newman run postman/player-service.postman_collection.json
+npx newman run postman/game-service.postman_collection.json
 npx newman run postman/exam-service.postman_collection.json
 npx newman run postman/world-service.postman_collection.json
+npx newman run postman/zombie-service.postman_collection.json
+npx newman run postman/resource-service.postman_collection.json
 ```
 
-Each collection starts by fetching test tokens from `POST /api/v1/dev/tokens`, then walks the main
-flow, the idempotency rules and the documented error codes.
+The collections walk each service's main flow and assert the expected success statuses. Mutating
+cross-service requests generate a fresh `Idempotency-Key` automatically.
 
-### Services not deployed yet
+### Optional dependency mocks
 
 A service whose URL is empty in `deploy/.env` is **mocked by its callers**: the request or event is
 logged as `[mock <service>]` with a contract-shaped response instead of being sent. So any subset of
-the team's services can run on its own, and connecting a real one means setting its URL. Until
-Player Service issues real tokens, player tokens are mocked too (see `PLAYER_JWKS_URL` and
-`AUTH_DEV_TOKENS` in `deploy/.env.example`).
+the team's services can run on its own, and connecting a real one means setting its URL. Game
+Service validates real Player Service tokens through `PLAYER_JWKS_URL`; its development-token route
+remains available only while `AUTH_DEV_TOKENS=true`.
 
 Inside the stack Exam Service already calls World Service. Passing an exam whose course unlocks a
 wing, such as `math-101` or `pad-201`, opens that wing in the player's lobby.

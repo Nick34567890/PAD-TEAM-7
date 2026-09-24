@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS lobbies(lobby_id uuid PRIMARY KEY,host_id uuid NOT NULL,university text NOT NULL,name text NOT NULL,max_players int NOT NULL,phase text NOT NULL,day int NOT NULL,status text NOT NULL,base_id text NOT NULL,created_at timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS lobby_players(lobby_id uuid REFERENCES lobbies ON DELETE CASCADE,player_id uuid NOT NULL,health int NOT NULL,joined_at timestamptz NOT NULL,PRIMARY KEY(lobby_id,player_id));
+CREATE TABLE IF NOT EXISTS actions(action_id uuid PRIMARY KEY,lobby_id uuid REFERENCES lobbies ON DELETE CASCADE,player_id uuid NOT NULL,type text NOT NULL,target_room_id text,target_node_id text,status text NOT NULL,started_at timestamptz NOT NULL,completes_at timestamptz NOT NULL,duration_seconds int NOT NULL,reward jsonb);
+CREATE TABLE IF NOT EXISTS trades(trade_id uuid PRIMARY KEY,lobby_id uuid REFERENCES lobbies ON DELETE CASCADE,from_player_id uuid NOT NULL,to_player_id uuid NOT NULL,offer jsonb NOT NULL,request jsonb NOT NULL,status text NOT NULL,cross_university boolean NOT NULL,created_at timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS encounters(encounter_id uuid PRIMARY KEY,lobby_id uuid REFERENCES lobbies ON DELETE CASCADE,player_id uuid NOT NULL,zombie_id text NOT NULL,zombie_type text NOT NULL,exam_id text,outcome text NOT NULL);
+CREATE TABLE IF NOT EXISTS idempotency(key text PRIMARY KEY,kind text NOT NULL,resource_id uuid NOT NULL,payload text NOT NULL);
+

@@ -12,10 +12,10 @@
 	url = https://github.com/Nick34567890/crafting-service.git
 [submodule "game-service"]
 	path = game-service
-	url = https://github.com/MaxRoenco/game-service.git
+	url = https://github.com/IslamAbukoush/game-service.git
 [submodule "player-service"]
 	path = player-service
-	url = https://github.com/MaxRoenco/player-service.git
+	url = https://github.com/IslamAbukoush/player-service.git
 [submodule "zombie-service"]
 	path = zombie-service
 	url = https://github.com/MaxRoenco/zombie-service.git
