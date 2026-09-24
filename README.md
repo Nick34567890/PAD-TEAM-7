@@ -50,7 +50,7 @@ in a named volume.
 ### Requirements
 
 - Docker with Docker Compose v2 (Docker Desktop on Windows and macOS)
-- Free host ports `8003` and `8004`, plus one per service as more join the stack
+- Free host ports `8003`, `8004`, `8007` and `8008`, plus one per service as more join the stack
 - Internet access on the first run, to pull the images
 
 ### Published images
@@ -59,6 +59,8 @@ in a named volume.
 | --- | --- | --- | --- | --- | --- |
 | Exam Service | Ilico Artemie | [`artflow/exam-service`](https://hub.docker.com/r/artflow/exam-service) | `1.0.0` | `8003` | [`postman/exam-service.postman_collection.json`](./postman/exam-service.postman_collection.json) |
 | World Service | Ilico Artemie | [`artflow/world-service`](https://hub.docker.com/r/artflow/world-service) | `1.0.0` | `8004` | [`postman/world-service.postman_collection.json`](./postman/world-service.postman_collection.json) |
+| Base Service | Gancear Nichita | [`nnick34567890/base-service`](https://hub.docker.com/r/nnick34567890/base-service) | `1.0.0` | `8007` | [`postman/base-service.postman_collection.json`](./postman/base-service.postman_collection.json) |
+| Crafting Service | Gancear Nichita | [`nnick34567890/crafting-service`](https://hub.docker.com/r/nnick34567890/crafting-service) | `1.0.0` | `8008` | [`postman/crafting-service.postman_collection.json`](./postman/crafting-service.postman_collection.json) |
 
 Each owner adds a row here when their service is published, together with its block in
 `deploy/docker-compose.yml`.
@@ -72,12 +74,33 @@ docker compose up -d
 docker compose ps        # every *-db is healthy and every service is Up
 ```
 
-- Health: `GET http://localhost:8003/api/v1/health`, `GET http://localhost:8004/api/v1/health`
+- Health: `GET http://localhost:{8003,8004,8007,8008}/api/v1/health`
 - Swagger UI: `http://localhost:8003/docs`, `http://localhost:8004/docs`
 - Each service applies its database migrations on startup, so a fresh volume is usable at once.
   Data survives `docker compose down`. Only `docker compose down -v` deletes it.
 - `SERVICE_JWT_SECRET` must be the **same for every service**, since they sign and verify each other's
   service tokens with it.
+
+### Database scripts
+
+The schema for each database is published in [`deploy/db/`](./deploy/db/), so the stack can create a
+database without anyone cloning a private repository. Each file is mounted into its Postgres
+container's `/docker-entrypoint-initdb.d/`, which runs only on a first, empty volume; every service
+also applies its own schema at boot, so an existing database is left alone either way.
+
+### Testing a service
+
+Each service ships a Postman collection in [`postman/`](./postman/). Import one, and run the folders
+in order — the first mints the tokens the rest depend on. `POST /api/v1/dev/tokens` exists because
+Player Service is not deployed yet: while `PLAYER_JWKS_URL` is empty each service mints its own test
+tokens, and the moment the real issuer arrives that endpoint is switched off with `AUTH_DEV_TOKENS`.
+
+### Running only part of the team's stack
+
+Every service treats an **empty** `*_SERVICE_URL` as *not deployed* and mocks that dependency: the
+call is logged rather than sent, and a deterministic answer comes back. So any subset of the eight
+services runs on its own, and pointing a variable at a real service removes the mock with no code
+change. What each mock returns is documented in that service's own README.
 
 ### Test
 
@@ -1672,6 +1695,13 @@ Every non-2xx response uses one shape, so clients and services parse errors iden
 | `500` | Unexpected failure | `INTERNAL_ERROR` |
 | `503` | A required downstream service is unreachable | `DEPENDENCY_UNAVAILABLE` |
 
+### Health and readiness
+
+Every service exposes two probes. `GET /api/v1/health` is **liveness**: the process is up, and it
+deliberately does not touch the database, so a database blip never gets a healthy service restarted.
+`GET /api/v1/ready` is **readiness**: it queries the database and answers `503
+DEPENDENCY_UNAVAILABLE` when that fails. Container health checks poll `/ready`.
+
 ### Common headers
 
 | Header | Direction | Purpose |
@@ -2286,6 +2316,8 @@ requires base level ≥ 3).
 | `POST` | `/api/v1/bases/{base_id}/storage` | player | Unlock storage capacity |
 | `POST` | `/api/v1/bases/{base_id}/decorations` | player | Decorate the homeroom |
 | `POST` | `/api/v1/bases/{base_id}/kiki` | player | Interact with Kiki |
+| `POST` | `/api/v1/events` | service | Consume `LobbyCreated` and `LobbyFinished` |
+| `GET` | `/api/v1/ready` | — | Readiness: the service *and* its database answer |
 
 ---
 
@@ -2349,7 +2381,9 @@ identical to the above.
 ---
 
 **`GET /api/v1/bases/{base_id}/blueprints`** — next-tier costs and unlock state, so clients can
-render affordability without duplicating the cost table.
+render affordability without duplicating the cost table. `affordable` and `missing` are only
+populated when Resource Service is reachable; with it absent the costs are still exact and the
+upgrade call itself reports a shortfall with `409 INSUFFICIENT_RESOURCES`.
 Headers: `Authorization: Bearer <jwt>`
 
 `200 OK`
@@ -2573,8 +2607,12 @@ the player inventory through Player Service. Limited to **once per in-game day p
 Headers: `Authorization: Bearer <jwt>` · `Idempotency-Key: <uuid>`
 
 ```json
-{ "player_id": "player-uuid-123", "offering": { "item_id": "food-01", "count": 2 } }
+{ "player_id": "player-uuid-123", "day": 4, "offering": { "item_id": "food-01", "count": 2 } }
 ```
+
+`day` is the current in-game day, supplied by the caller — Base Service has no clock of its own.
+The once-per-day limit is enforced by a unique index on `(base_id, player_id, day)`, so two
+concurrent feeds cannot both win.
 
 `200 OK`
 
@@ -2667,6 +2705,8 @@ Because every step is keyed off one idempotency key, the saga is replayable from
 | `POST` | `/api/v1/crafts` | player | Craft, atomically and exactly once |
 | `GET` | `/api/v1/crafts/{job_id}` | player | Terminal state of a craft |
 | `GET` | `/api/v1/crafts` | player | Craft history |
+| `POST` | `/api/v1/events` | service | Consume `PlayerLeveledUp`, `ExamPassed`, `WingUnlocked` |
+| `GET` | `/api/v1/ready` | — | Readiness: the service *and* its database answer |
 
 ---
 
@@ -2772,9 +2812,14 @@ Headers: `Authorization: Bearer <jwt>`
   "craftable": false,
   "unlocked": true,
   "missing_materials": [{ "item_id": "electronics-01", "required": 2, "available": 0 }],
+  "materials_verified": true,
   "facility_ok": true
 }
 ```
+
+`materials_verified` is `false` when Resource Service is unreachable: `missing_materials` is then
+empty because stock is *unknown*, not because it is sufficient. A client should treat an unverified
+preview as "try it and see" rather than as a green light.
 
 ---
 
@@ -2824,7 +2869,9 @@ consumed a second time.
 ```
 
 Other errors: `403 RECIPE_LOCKED` with the unlock condition · `422 FACILITY_LEVEL_TOO_LOW` ·
-`500 CRAFT_COMPENSATED` when delivery failed and the materials were returned.
+`500 CRAFT_COMPENSATED` when delivery failed and the materials were returned ·
+`409 CRAFT_IN_PROGRESS` when the same key is retried while the first attempt is still running —
+poll `GET /api/v1/crafts/{job_id}` rather than retrying again.
 
 ---
 
@@ -3023,6 +3070,7 @@ issue is closed by the PR; and the Project board card has moved to **Done** auto
 ├── docs/                              ← written architecture notes
 ├── png_arh/                           ← architecture diagrams used by this README
 ├── deploy/                            ← team docker-compose (DockerHub images) + .env.example
+│   └── db/                            ← one schema script per database
 ├── postman/                           ← one Postman collection per service
 ├── guide-private.md                   ← how to create and link the private repos
 ├── player-service/                    ← submodule (private)

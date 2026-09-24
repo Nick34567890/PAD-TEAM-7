@@ -86,9 +86,76 @@ services:
       world-db:
         condition: service_healthy
 
-  # Player, Game, Zombie, Resource, Base and Crafting join here, each as `<service>-db` +
+  # ---------------------------------------------------------------- Base Service (Gancear Nichita)
+  base-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${BASE_DB_USER:-base}
+      POSTGRES_PASSWORD: ${BASE_DB_PASSWORD:?BASE_DB_PASSWORD is not set in .env}
+      POSTGRES_DB: base_db
+    volumes:
+      - base_db_data:/var/lib/postgresql/data
+      - ./db/base_db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+
+  base-service:
+    image: nnick34567890/base-service:${BASE_SERVICE_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "8007:8007"
+    environment:
+      <<: *auth
+      PORT: 8007
+      DB_HOST: base-db
+      DB_PORT: 5432
+      DB_USER: ${BASE_DB_USER:-base}
+      DB_PASSWORD: ${BASE_DB_PASSWORD}
+      DB_NAME: base_db
+      RESOURCE_SERVICE_URL: ${RESOURCE_SERVICE_URL:-}
+      WORLD_SERVICE_URL: http://world-service:8004
+      PLAYER_SERVICE_URL: ${PLAYER_SERVICE_URL:-}
+      EXAM_SERVICE_URL: http://exam-service:8003
+    depends_on:
+      base-db:
+        condition: service_healthy
+
+  # ------------------------------------------------------------ Crafting Service (Gancear Nichita)
+  crafting-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${CRAFTING_DB_USER:-crafting}
+      POSTGRES_PASSWORD: ${CRAFTING_DB_PASSWORD:?CRAFTING_DB_PASSWORD is not set in .env}
+      POSTGRES_DB: crafting_db
+    volumes:
+      - crafting_db_data:/var/lib/postgresql/data
+      - ./db/crafting_db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+
+  crafting-service:
+    image: nnick34567890/crafting-service:${CRAFTING_SERVICE_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "8008:8008"
+    environment:
+      <<: *auth
+      PORT: 8008
+      DB_HOST: crafting-db
+      DB_PORT: 5432
+      DB_USER: ${CRAFTING_DB_USER:-crafting}
+      DB_PASSWORD: ${CRAFTING_DB_PASSWORD}
+      DB_NAME: crafting_db
+      RESOURCE_SERVICE_URL: ${RESOURCE_SERVICE_URL:-}
+      PLAYER_SERVICE_URL: ${PLAYER_SERVICE_URL:-}
+      EXAM_SERVICE_URL: http://exam-service:8003
+      WORLD_SERVICE_URL: http://world-service:8004
+      BASE_SERVICE_URL: http://base-service:8007
+    depends_on:
+      crafting-db:
+        condition: service_healthy
+
+  # Player, Game, Zombie and Resource join here, each as `<service>-db` +
   # `<service>` from its DockerHub image, once their owners publish them.
 
 volumes:
   exam_db_data:
   world_db_data:
+  base_db_data:
+  crafting_db_data:
