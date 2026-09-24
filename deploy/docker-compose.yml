@@ -38,7 +38,7 @@ services:
       - ./db/player_db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
 
   player-service:
-    image: islamabukoush/player-service:${PLAYER_SERVICE_VERSION:-1.0.0}
+    image: geografix/player-service:${PLAYER_SERVICE_VERSION:-1.0.0}
     restart: unless-stopped
     ports:
       - "8001:8001"
@@ -63,7 +63,7 @@ services:
       - ./db/game_db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
 
   game-service:
-    image: islamabukoush/game-service:${GAME_SERVICE_VERSION:-1.0.0}
+    image: geografix/game-service:${GAME_SERVICE_VERSION:-1.0.0}
     restart: unless-stopped
     ports:
       - "8002:8002"
@@ -221,7 +221,7 @@ services:
       - zombie_db_data:/var/lib/postgresql/data
 
   zombie-service:
-    image: maxroenco/zombie-service:${ZOMBIE_SERVICE_VERSION:-1.0.0}
+    image: geografix/zombie-service:${ZOMBIE_SERVICE_VERSION:-1.0.0}
     restart: unless-stopped
     ports:
       - "8005:8005"
@@ -251,7 +251,7 @@ services:
       - resource_db_data:/var/lib/postgresql/data
 
   resource-service:
-    image: maxroenco/resource-service:${RESOURCE_SERVICE_VERSION:-1.0.0}
+    image: geografix/resource-service:${RESOURCE_SERVICE_VERSION:-1.0.0}
     restart: unless-stopped
     ports:
       - "8006:8006"

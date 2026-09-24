@@ -57,25 +57,17 @@ in a named volume.
 
 | Service | Owner | Image | Version | Port | Postman collection |
 | --- | --- | --- | --- | --- | --- |
-| Player Service | Islam Abu Koush | [`islamabukoush/player-service`](https://hub.docker.com/r/islamabukoush/player-service) | `1.0.0` | `8001` | [`postman/player-service.postman_collection.json`](./postman/player-service.postman_collection.json) |
-| Game Service | Islam Abu Koush | [`islamabukoush/game-service`](https://hub.docker.com/r/islamabukoush/game-service) | `1.0.0` | `8002` | [`postman/game-service.postman_collection.json`](./postman/game-service.postman_collection.json) |
+| Player Service | Islam Abu Koush | [`geografix/player-service`](https://hub.docker.com/r/geografix/player-service) | `1.0.0` | `8001` | [`postman/player-service.postman_collection.json`](./postman/player-service.postman_collection.json) |
+| Game Service | Islam Abu Koush | [`geografix/game-service`](https://hub.docker.com/r/geografix/game-service) | `1.0.0` | `8002` | [`postman/game-service.postman_collection.json`](./postman/game-service.postman_collection.json) |
 | Exam Service | Ilico Artemie | [`artflow/exam-service`](https://hub.docker.com/r/artflow/exam-service) | `1.0.0` | `8003` | [`postman/exam-service.postman_collection.json`](./postman/exam-service.postman_collection.json) |
 | World Service | Ilico Artemie | [`artflow/world-service`](https://hub.docker.com/r/artflow/world-service) | `1.0.0` | `8004` | [`postman/world-service.postman_collection.json`](./postman/world-service.postman_collection.json) |
-| Zombie Service | Roenco Maxim | `maxroenco/zombie-service` (local image) | `1.0.0` | `8005` | [`postman/zombie-service.postman_collection.json`](./postman/zombie-service.postman_collection.json) |
-| Resource Service | Roenco Maxim | `maxroenco/resource-service` (local image) | `1.0.0` | `8006` | [`postman/resource-service.postman_collection.json`](./postman/resource-service.postman_collection.json) |
+| Zombie Service | Roenco Maxim | [`geografix/zombie-service`](https://hub.docker.com/r/geografix/zombie-service) | `1.0.0` | `8005` | [`postman/zombie-service.postman_collection.json`](./postman/zombie-service.postman_collection.json) |
+| Resource Service | Roenco Maxim | [`geografix/resource-service`](https://hub.docker.com/r/geografix/resource-service) | `1.0.0` | `8006` | [`postman/resource-service.postman_collection.json`](./postman/resource-service.postman_collection.json) |
 | Base Service | Gancear Nichita | [`nnick34567890/base-service`](https://hub.docker.com/r/nnick34567890/base-service) | `1.0.0` | `8007` | [`postman/base-service.postman_collection.json`](./postman/base-service.postman_collection.json) |
 | Crafting Service | Gancear Nichita | [`nnick34567890/crafting-service`](https://hub.docker.com/r/nnick34567890/crafting-service) | `1.0.0` | `8008` | [`postman/crafting-service.postman_collection.json`](./postman/crafting-service.postman_collection.json) |
 
 Each owner adds a row here when their service is published, together with its block in
 `deploy/docker-compose.yml`.
-
-Zombie and Resource are implemented locally but are not published. Build their private images before
-starting the team stack:
-
-```bash
-docker build -t maxroenco/zombie-service:1.0.0 ../zombie-service
-docker build -t maxroenco/resource-service:1.0.0 ../resource-service
-```
 
 ### Start
 
